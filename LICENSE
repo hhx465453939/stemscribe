@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Alex Huang
+Copyright (c) 2026 Stemscribe contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Note on third-party components:
+
+Stemscribe does not bundle or redistribute third-party neural network model
+weights. Model files are downloaded at the user's request from their official
+upstream sources, and each model's own license applies. Engine binaries
+(whisper.cpp, FFmpeg, Python-based separators) are installed at runtime from
+their official distributions and remain under their respective licenses.
+See THIRD-PARTY-NOTICES.md (added with the first runtime integration) and
+docs/MODEL-REGISTRY.md for details.

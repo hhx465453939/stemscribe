@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stemscribe.dev/schema/bundle-meta.schema.json",
+  "title": "Stemscribe Library Bundle meta.json",
+  "description": "单集产物元数据。provenance 必须可复现：引擎版本 + 模型 sha 前缀 + 参数快照 + 提示词 hash。禁止写入任何密钥。",
+  "type": "object",
+  "required": ["schema", "video_id", "created_at", "updated_at", "source", "status", "stages", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "video_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "title": { "type": "string", "maxLength": 500 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["url", "file"] },
+        "url": { "type": ["string", "null"], "maxLength": 2048 },
+        "origin": { "enum": ["bilibili", "local", "other", null] },
+        "part_index": { "type": ["integer", "null"], "minimum": 1 },
+        "local_path": {
+          "type": ["string", "null"],
+          "description": "仅当 kind=file；不含用户口令等敏感信息"
+        },
+        "raw_bytes_retained": { "type": "boolean", "description": "原片是否保留在 bundle 内" }
+      }
+    },
+    "status": { "enum": ["queued", "running", "done", "failed", "canceled"] },
+    "stages": {
+      "type": "object",
+      "description": "阶段 -> 结果。skipped 用于未启用阶段（如未开润色）",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["state"],
+        "additionalProperties": false,
+        "properties": {
+          "state": { "enum": ["ok", "failed", "skipped"] },
+          "elapsed_ms": { "type": "integer", "minimum": 0 },
+          "error_code": { "type": ["string", "null"], "maxLength": 64 },
+          "error_message": { "type": ["string", "null"], "maxLength": 2000 },
+          "outputs": { "type": "array", "items": { "type": "string", "maxLength": 512 } }
+        }
+      },
+      "propertyNames": {
+        "enum": ["resolve", "download", "probe", "demux", "separate", "transcribe", "align", "polish", "export"]
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["engines", "params_snapshot_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "engines": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["name", "version"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "maxLength": 64 },
+              "version": { "type": "string", "maxLength": 64 },
+              "backend": { "enum": ["cuda12", "cuda11", "vulkan", "directml", "cpu", "none", null] },
+              "model_id": { "type": ["string", "null"], "maxLength": 128 },
+              "model_sha12": {
+                "type": ["string", "null"],
+                "pattern": "^[a-f0-9]{12}$",
+                "description": "sha256 前 12 位，用于人工比对，不用于校验"
+              },
+              "quantization": { "type": ["string", "null"], "maxLength": 16 }
+            }
+          }
+        },
+        "params_snapshot_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "params_snapshot": {
+          "type": "object",
+          "description": "阶段参数快照（不含密钥、不含 header）"
+        },
+        "prompt": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "maxLength": 64 },
+            "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "provider_id": { "type": ["string", "null"], "maxLength": 64 },
+            "model_id": { "type": ["string", "null"], "maxLength": 200 }
+          }
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gpu": { "type": ["string", "null"], "maxLength": 120 },
+            "vram_mb": { "type": ["integer", "null"], "minimum": 0 },
+            "driver": { "type": ["string", "null"], "maxLength": 32 },
+            "cpu_cores": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "segments": { "type": "integer", "minimum": 0 },
+        "low_confidence_segments": { "type": "integer", "minimum": 0 },
+        "dropped_hallucinations": { "type": "integer", "minimum": 0 },
+        "degraded_blocks": { "type": "integer", "minimum": 0, "description": "润色阶段锚点丢失而降级的块数" },
+        "avg_confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundle_bytes": { "type": "integer", "minimum": 0 },
+        "raw_video_bytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

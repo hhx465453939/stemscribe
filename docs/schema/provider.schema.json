@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stemscribe.dev/schema/provider.schema.json",
+  "title": "Stemscribe LLM Provider Config",
+  "description": "LLM 端点与模型能力配置。密钥本体永不在此文件（存 DPAPI secrets.bin）。能力字段支持三层来源：registry(内置库) / probe(/v1/models) / manual(用户手改，优先级最高)。",
+  "type": "object",
+  "required": ["schema", "providers"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "providers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/provider" }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "required": ["id", "label", "kind", "base_url", "has_secret", "timeout_s", "max_retries", "enabled", "models"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,47}$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "kind": { "enum": ["openai_compat", "anthropic"] },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://",
+          "description": "本地端点允许 http://127.0.0.1:*；远程建议 https"
+        },
+        "has_secret": { "type": "boolean", "description": "仅标记是否存在密钥，密钥本体在 DPAPI secrets.bin" },
+        "extra_headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "maxLength": 1024 },
+          "propertyNames": {
+            "not": { "enum": ["Authorization", "authorization", "x-api-key"] }
+          },
+          "description": "禁止覆盖鉴权头，避免混淆密钥来源"
+        },
+        "proxy": { "type": ["string", "null"], "format": "uri" },
+        "insecure_tls": { "type": "boolean", "default": false, "description": "跳过证书校验；开启时 UI 必须红字警告" },
+        "timeout_s": { "type": "integer", "minimum": 5, "maximum": 1800, "default": 120 },
+        "max_retries": { "type": "integer", "minimum": 0, "maximum": 5, "default": 2 },
+        "enabled": { "type": "boolean" },
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/model" }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["context_window", "max_output_tokens", "vision", "tools", "streaming"],
+      "additionalProperties": false,
+      "properties": {
+        "context_window": { "type": "integer", "minimum": 512, "maximum": 20000000 },
+        "max_output_tokens": { "type": "integer", "minimum": 16, "maximum": 2000000 },
+        "vision": { "type": "boolean" },
+        "tools": { "type": "boolean" },
+        "reasoning": {
+          "type": "object",
+          "required": ["supported"],
+          "additionalProperties": false,
+          "properties": {
+            "supported": { "type": "boolean" },
+            "mode": {
+              "enum": ["effort", "budget_tokens", "switch", null],
+              "description": "effort=OpenAI o 系；budget_tokens=Anthropic；switch=enable_thinking(Qwen/GLM)"
+            },
+            "max_budget_tokens": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "streaming": { "type": "boolean" },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "temperature": { "type": "boolean" },
+            "top_p": { "type": "boolean" },
+            "top_k": { "type": "boolean" },
+            "seed": { "type": "boolean" },
+            "stop": { "type": "boolean" },
+            "penalties": { "type": "boolean" }
+          }
+        },
+        "response_format": {
+          "type": "array",
+          "items": { "enum": ["text", "json_object", "json_schema"] },
+          "uniqueItems": true
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+        "top_k": { "type": ["integer", "null"], "minimum": 1, "maximum": 1000 },
+        "max_tokens": { "type": "integer", "minimum": 16, "maximum": 2000000 },
+        "presence_penalty": { "type": "number", "minimum": -2, "maximum": 2 },
+        "frequency_penalty": { "type": "number", "minimum": -2, "maximum": 2 },
+        "seed": { "type": ["integer", "null"] },
+        "stop": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 8 },
+        "reasoning_effort": { "enum": ["off", "low", "medium", "high", null] },
+        "thinking_budget_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "response_format": { "enum": ["text", "json_object", "json_schema"] },
+        "stream": { "type": "boolean", "default": true }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["id", "caps", "caps_source", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "display": { "type": "string", "maxLength": 120 },
+        "stale": {
+          "type": "boolean",
+          "default": false,
+          "description": "刷新后端点不再返回该模型；保留配置，不自动删除"
+        },
+        "caps": { "$ref": "#/$defs/capabilities" },
+        "caps_source": { "enum": ["registry", "probe", "manual"] },
+        "params": { "$ref": "#/$defs/params" }
+      }
+    }
+  }
+}

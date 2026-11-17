@@ -1,0 +1,87 @@
+# —— 运行时与产物（绝不入库）——
+/workdir/
+/libraries/
+/models/
+/runtimes/
+/cache/
+/logs/
+/tmp/
+*.gguf
+*.bin
+*.onnx
+*.pth
+*.pt
+*.safetensors
+*.wav
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.flac
+!testdata/**/*.wav
+
+# —— 密钥与本地配置（绝不入库）——
+secrets.bin
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# —— Go ——
+/build/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.work
+go.work.sum
+
+# —— Node / Next.js ——
+node_modules/
+.pnpm-store/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+.npm/
+.pnpm-debug.log*
+
+# —— Wails 生成物 ——
+/frontend/wailsjs/
+/frontend/bindings/
+/build/windows/icon.ico.bak
+
+# —— 编辑器 / 系统 ——
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# —— 测试与覆盖率 ——
+coverage.out
+coverage.html
+*.cover
+/tmp/
+/testdata/generated/
+
+# —— 上游参考源码（调研用，不入库）——
+/_ref/
+
+# —— 运行时噪音 ——
+*.log
+*.jsonl.tmp
+*.part
+*.partial
+.calibration.tmp
