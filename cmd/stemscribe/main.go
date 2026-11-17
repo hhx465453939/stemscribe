@@ -1,8 +1,8 @@
-// Command stemscribe is the single binary for the app: it hosts the desktop UI
-// (Wails, later increment) and the headless CLI used by smoke tests and CI.
+// Command stemscribe is the single binary for the app.
 //
-// The CLI exists because the pipeline must be verifiable without a GUI: every
-// acceptance test in CHG-0001 §6 drives it directly.
+// Launching it with no arguments (i.e. double-clicking the exe) opens the UI.
+// Everything else is available as an explicit subcommand for scripts and CI,
+// because every acceptance test in CHG-0001 §6 drives the CLI directly.
 package main
 
 import (
@@ -14,11 +14,16 @@ import (
 var version = "0.0.1-dev"
 
 func main() {
+	// No arguments means "a human double-clicked this": open the app. Previously
+	// this printed usage and exited 2, so the window vanished instantly and the
+	// build looked broken.
 	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+		os.Exit(cmdShell(nil))
 	}
+
 	switch os.Args[1] {
+	case "shell":
+		os.Exit(cmdShell(os.Args[2:]))
 	case "run":
 		os.Exit(cmdRun(os.Args[2:]))
 	case "probe":
@@ -38,14 +43,16 @@ func usage() {
 	fmt.Fprint(os.Stderr, `stemscribe `+version+`
 
 Usage:
-  stemscribe run     --input <file> [--workdir <dir>] [--no-separate] [--no-polish] [--title <t>]
+  stemscribe                        open the UI (same as: stemscribe shell)
+  stemscribe shell   [--no-open]    serve the embedded UI on loopback and open it
+  stemscribe run     --input <file> [--workdir <dir>] [--no-separate] [--duration-ms N]
   stemscribe probe   [--workdir <dir>]
   stemscribe version
 
 Notes:
-  run      executes the pipeline for a local media file and writes a bundle
-  probe    reports the detected hardware and the backend that would be used
-  Engine inference is not part of this increment (CHG-0002); run uses a
-  synthetic engine so the orchestration and artifacts can be verified.
+  The UI is served from 127.0.0.1 only and is embedded in this binary by
+  scripts/build.ps1 (frontend/out -> cmd/stemscribe/assets).
+  Inference is not part of this increment (CHG-0002); run uses a synthetic
+  engine so the orchestration and artifacts can be verified.
 `)
 }

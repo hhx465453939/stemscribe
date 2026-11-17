@@ -56,7 +56,7 @@ export function TaskBoard() {
 
             {t.total > 0 ? (
               <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
-                <div className="bar">
+                <div className={t.stage === "done" ? "bar bar--done" : "bar"}>
                   <span style={{ width: `${pct}%` }} />
                 </div>
                 <div className="row row--between">

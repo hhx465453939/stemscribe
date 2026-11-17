@@ -59,6 +59,17 @@ jobs:
       - name: Go tests
         run: go test ./... -count=1
 
+      - name: Embed UI assets
+        shell: pwsh
+        run: |
+          $assets = 'internal/webui/assets'
+          New-Item -ItemType Directory -Force -Path $assets | Out-Null
+          Get-ChildItem -LiteralPath $assets -Recurse -File |
+            Where-Object { $_.Name -ne 'placeholder.txt' } |
+            Remove-Item -Force
+          Copy-Item -Path 'frontend/out/*' -Destination $assets -Recurse -Force
+          if (-not (Test-Path (Join-Path $assets 'index.html'))) { throw 'UI assets not embedded' }
+
       - name: Build binary
         shell: pwsh
         run: |

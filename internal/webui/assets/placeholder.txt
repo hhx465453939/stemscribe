@@ -1,0 +1,11 @@
+Embeds the exported UI at build time.
+
+scripts/build.ps1 clears this directory and copies frontend/out here before
+`go build`, which is what makes the single exe self-contained.
+
+This file stays in git so that `go:embed all:assets` always matches at least one
+file on a fresh clone: `go build ./...` and `go test ./...` must work before the
+frontend has ever been built.
+
+It lives next to internal/webui/webui.go because go:embed resolves paths
+relative to the package directory.

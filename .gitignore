@@ -59,6 +59,10 @@ next-env.d.ts
 /frontend/bindings/
 /build/windows/icon.ico.bak
 
+# —— 内嵌界面（scripts/build.ps1 生成，占位文件常驻以保证 go:embed 可编译）——
+internal/webui/assets/*
+!internal/webui/assets/placeholder.txt
+
 # —— 编辑器 / 系统 ——
 .vscode/*
 !.vscode/extensions.json

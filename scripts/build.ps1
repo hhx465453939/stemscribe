@@ -37,6 +37,17 @@ if (-not $SkipFrontend) {
     }
 }
 
+Write-Host '== embed UI into the binary ==' -ForegroundColor Cyan
+$assets = Join-Path $repo 'internal\webui\assets'
+if (Test-Path $assets) {
+    Get-ChildItem -LiteralPath $assets -Recurse -File |
+        Where-Object { $_.Name -ne 'placeholder.txt' } |
+        Remove-Item -Force
+}
+New-Item -ItemType Directory -Force -Path $assets | Out-Null
+if (-not $SkipFrontend) {
+    Copy-Item -Path (Join-Path $repo 'frontend\out\*') -Destination $assets -Recurse -Force
+}
 Write-Host '== go: build windows/amd64 ==' -ForegroundColor Cyan
 Push-Location $repo
 try {

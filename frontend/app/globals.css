@@ -202,6 +202,7 @@ a {
   background: transparent;
   color: var(--bone);
   cursor: pointer;
+  white-space: nowrap;
   transition: background 120ms ease-out, border-color 120ms ease-out;
 }
 
@@ -215,6 +216,7 @@ a {
   border-color: var(--lamp);
   color: var(--ink);
   font-weight: 600;
+  min-width: 88px;
 }
 
 .btn--primary:hover {
@@ -256,6 +258,21 @@ a {
   display: block;
   height: 100%;
   background: var(--lamp);
+}
+
+/* A finished task must recede: the amber "lamp" belongs to the one thing that is
+   actually running. Two equally bright bars destroy the single-light-source gene. */
+.bar--done > span {
+  background: var(--bone-mute);
+}
+
+/* Native checkboxes render in system blue, which is outside the 4-colour palette. */
+input[type="checkbox"] {
+  accent-color: var(--lamp);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
 }
 
 .mono {
