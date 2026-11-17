@@ -34,7 +34,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # pnpm 11.15.1 requires node >= 22.13 (see engines in pnpm's manifest).
+          node-version: '22'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 

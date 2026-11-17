@@ -86,7 +86,9 @@ jobs:
           version: 11.15.1
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # pnpm 11.15.1 declares engines.node >= 22.13; Node 20 makes pnpm die at
+          # startup with ERR_UNKNOWN_BUILTIN_MODULE before install even begins.
+          node-version: '22'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
