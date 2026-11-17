@@ -1,23 +1,67 @@
-/* Design tokens — mirror of docs/UI-DESIGN.md §3.
+/* Design tokens — mirror of docs/UI-DESIGN.md.
    Genes: Swiss grid (structure) x single light source (focus only).
-   Rules: 4 colours max, one radius, no box-shadow for hierarchy, no gradients
-   except the single amber "lamp" glow on the active element. */
 
-:root {
-  --ink: #0a0b0d;
-  --surface: #14171b;
-  --surface-hi: #1b1f25;
-  --bone: #e9e6e0;
-  --bone-dim: #9aa0a6;
-  --bone-mute: #666c73;
-  --line: #23272e;
-  --line-hi: #343941;
-  --lamp: #c9a227;
+   Two themes, one gene. Light is the primary gene's native habitat (a white
+   Swiss grid); dark is the same grid after lights-out, where focus is expressed
+   by a warm pool of light. Exactly one accent (amber) exists in both, in two
+   tones so contrast survives the swap. Four colours per theme, one radius. */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-hi: #f1f1ee;
+  --surface-lit: #fffdf6;
+
+  --text-1: #14161a;
+  --text-2: #4a4f57;
+  /* Measured 4.7:1 on --bg. The previous #8a8f97 was 2.9:1 and failed WCAG AA. */
+  --text-3: #6b7076;
+
+  --line: #e3e4e1;
+  --line-hi: #cbcdc9;
+
+  /* Amber, dark enough that it is readable as TEXT on paper white (5.3:1).
+     The brighter --lamp-fill is only ever a background behind dark ink. */
+  --lamp: #8a5f0e;
+  --lamp-fill: #c9a227;
+  --lamp-ink: #1a1405;
   --fail: #b4433a;
 
+  --glow: radial-gradient(ellipse at 10% 0%, rgba(201, 162, 39, 0.16), transparent 62%);
+  --glyph: #e3e4e1;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0a0b0d;
+  --surface: #14171b;
+  --surface-hi: #1b1f25;
+  --surface-lit: #1d2128;
+
+  --text-1: #e9e6e0;
+  --text-2: #9aa0a6;
+  /* Measured 5.2:1 on --bg. The previous #666c73 was 3.6:1 and failed WCAG AA. */
+  --text-3: #7d848c;
+
+  --line: #23272e;
+  --line-hi: #343941;
+
+  --lamp: #c9a227;
+  --lamp-fill: #c9a227;
+  --lamp-ink: #0a0b0d;
+  --fail: #b4433a;
+
+  --glow: radial-gradient(ellipse at 10% 0%, rgba(201, 162, 39, 0.1), transparent 62%);
+  --glyph: #23272e;
+}
+
+:root {
   --radius: 2px;
   --hairline: 1px solid var(--line);
-  --lamp-glow: radial-gradient(ellipse at 12% 0%, rgba(201, 162, 39, 0.1), transparent 62%);
 
   --font-ui: "Inter", "Geist", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
@@ -46,12 +90,13 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--ink);
-  color: var(--bone);
+  background: var(--bg);
+  color: var(--text-1);
   font-family: var(--font-ui);
   font-size: var(--fs-body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  /* Theme swaps are instant; animating every colour looks like a malfunction. */
 }
 
 a {
@@ -76,7 +121,7 @@ a {
   flex-direction: column;
   padding: var(--sp-6) var(--sp-4);
   border-right: var(--hairline);
-  background: var(--ink);
+  background: var(--bg);
 }
 
 .brand {
@@ -104,31 +149,78 @@ a {
 
 .nav a {
   padding: var(--sp-2) var(--sp-3);
-  color: var(--bone-dim);
+  color: var(--text-2);
   border-left: 2px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
   transition: color 120ms ease-out, background 120ms ease-out;
 }
 
 .nav a:hover {
-  color: var(--bone);
+  color: var(--text-1);
   background: var(--surface);
 }
 
 .nav a[data-active="true"] {
-  color: var(--bone);
+  color: var(--text-1);
   border-left-color: var(--lamp);
-  background: var(--surface);
+  background: var(--surface-hi);
+}
+
+.sidebar__foot {
+  margin-top: auto;
+  padding-top: var(--sp-4);
+  display: grid;
+  gap: var(--sp-3);
 }
 
 .resource-bar {
-  margin-top: auto;
-  padding-top: var(--sp-4);
+  padding-top: var(--sp-3);
   border-top: var(--hairline);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--bone-mute);
+  color: var(--text-3);
   display: grid;
   gap: var(--sp-1);
+}
+
+/* ---------- segmented switch (theme / language) ---------- */
+
+.seg {
+  display: inline-flex;
+  border: var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.seg > button {
+  font: inherit;
+  font-size: var(--fs-micro);
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+
+.seg > button + button {
+  border-left: var(--hairline);
+}
+
+.seg > button[data-on="true"] {
+  background: var(--surface-hi);
+  color: var(--text-1);
+}
+
+.seg > button:hover {
+  color: var(--text-1);
+}
+
+.seg > button:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: -2px;
 }
 
 /* ---------- main ---------- */
@@ -146,7 +238,7 @@ a {
 }
 
 .page-sub {
-  color: var(--bone-mute);
+  color: var(--text-3);
   margin: 0 0 var(--sp-8);
   font-size: var(--fs-micro);
   font-family: var(--font-mono);
@@ -167,12 +259,13 @@ a {
   padding: var(--sp-4);
 }
 
+/* The one lit thing: warm paper in light, a pool of light in the dark. */
 .panel--lit {
-  background: var(--surface-hi);
+  background: var(--surface-lit);
   border-left: 2px solid var(--lamp);
-  background-image: var(--lamp-glow);
+  background-image: var(--glow);
   background-repeat: no-repeat;
-  background-size: 100% 120px;
+  background-size: 100% 140px;
 }
 
 .row {
@@ -200,7 +293,7 @@ a {
   border-radius: var(--radius);
   border: 1px solid var(--line-hi);
   background: transparent;
-  color: var(--bone);
+  color: var(--text-1);
   cursor: pointer;
   white-space: nowrap;
   transition: background 120ms ease-out, border-color 120ms ease-out;
@@ -208,20 +301,37 @@ a {
 
 .btn:hover {
   background: var(--surface-hi);
-  border-color: var(--bone-mute);
+  border-color: var(--text-3);
 }
 
 .btn--primary {
-  background: var(--lamp);
-  border-color: var(--lamp);
-  color: var(--ink);
+  background: var(--lamp-fill);
+  border-color: var(--lamp-fill);
+  color: var(--lamp-ink);
   font-weight: 600;
   min-width: 88px;
 }
 
 .btn--primary:hover {
-  filter: brightness(1.08);
-  background: var(--lamp);
+  filter: brightness(1.06);
+  background: var(--lamp-fill);
+}
+
+/* Disabled must read as "inactive", not as "a faded amber button". A 45% alpha
+   amber on paper white looks like a rendering bug, so the fill goes neutral. */
+.btn:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  color: var(--text-3);
+  border-color: var(--line);
+  background: var(--surface-hi);
+}
+
+.btn--primary:disabled {
+  background: var(--surface-hi);
+  border-color: var(--line-hi);
+  color: var(--text-3);
+  font-weight: 400;
 }
 
 .btn:focus-visible,
@@ -238,11 +348,11 @@ a {
   background: var(--surface);
   border: var(--hairline);
   border-radius: var(--radius);
-  color: var(--bone);
+  color: var(--text-1);
 }
 
 .input::placeholder {
-  color: var(--bone-mute);
+  color: var(--text-3);
 }
 
 /* ---------- progress ---------- */
@@ -260,15 +370,16 @@ a {
   background: var(--lamp);
 }
 
-/* A finished task must recede: the amber "lamp" belongs to the one thing that is
-   actually running. Two equally bright bars destroy the single-light-source gene. */
+/* A finished task must recede: the amber belongs to the one thing still running.
+   Uses the hairline tone so a full-width bar reads as "settled", not as a second
+   highlight competing with the active task. */
 .bar--done > span {
-  background: var(--bone-mute);
+  background: var(--line-hi);
 }
 
-/* Native checkboxes render in system blue, which is outside the 4-colour palette. */
+/* Native checkboxes render in system blue, which is outside the palette. */
 input[type="checkbox"] {
-  accent-color: var(--lamp);
+  accent-color: var(--lamp-fill);
   width: 14px;
   height: 14px;
   margin: 0;
@@ -278,7 +389,7 @@ input[type="checkbox"] {
 .mono {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--bone-dim);
+  color: var(--text-2);
 }
 
 .dot {
@@ -294,7 +405,7 @@ input[type="checkbox"] {
 }
 
 .dot--done {
-  background: var(--bone-dim);
+  background: var(--text-3);
 }
 
 .dot--fail {
@@ -326,7 +437,7 @@ table.grid {
 table.grid th {
   text-align: left;
   font-weight: 600;
-  color: var(--bone-dim);
+  color: var(--text-3);
   font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -360,7 +471,7 @@ th.num {
   padding: 1px var(--sp-2);
   border: var(--hairline);
   border-radius: var(--radius);
-  color: var(--bone-dim);
+  color: var(--text-2);
 }
 
 .tag--manual {
@@ -369,7 +480,7 @@ th.num {
 }
 
 .muted {
-  color: var(--bone-mute);
+  color: var(--text-3);
 }
 
 .disabled {
@@ -379,13 +490,13 @@ th.num {
 .empty {
   text-align: left;
   padding: var(--sp-12) 0;
-  color: var(--bone-mute);
+  color: var(--text-3);
 }
 
 .empty__glyph {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--line-hi);
+  color: var(--glyph);
   margin-bottom: var(--sp-4);
   white-space: pre;
   line-height: 1.1;

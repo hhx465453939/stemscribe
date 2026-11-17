@@ -1,17 +1,20 @@
+"use client";
+
 import { NewTask } from "./components/NewTask";
 import { TaskBoard } from "./components/TaskBoard";
+import { usePrefs } from "./components/Providers";
 
 export default function HomePage() {
+  const { t } = usePrefs();
+
   return (
     <>
-      <h1 className="page-title">新建任务</h1>
-      <p className="page-sub">
-        本地运行 · 音视频不出本机 · 仅润色会外发文本
-      </p>
+      <h1 className="page-title">{t("home.title")}</h1>
+      <p className="page-sub">{t("home.subtitle")}</p>
 
       <NewTask />
 
-      <h2 className="section-title">任务</h2>
+      <h2 className="section-title">{t("home.tasks")}</h2>
       <TaskBoard />
     </>
   );

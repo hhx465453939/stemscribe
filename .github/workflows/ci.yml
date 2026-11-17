@@ -100,6 +100,11 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: pnpm run typecheck
+      - name: Theme + i18n guard
+        run: |
+          set -euo pipefail
+          bash scripts/i18n-check.sh
+          python scripts/contrast.py
       - name: Build (static export)
         working-directory: frontend
         run: pnpm run build

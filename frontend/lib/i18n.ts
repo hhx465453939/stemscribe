@@ -1,0 +1,246 @@
+// UI strings. Flat keys on purpose: parity between locales is enforced by the
+// type checker, and a flat map diffs cleanly in review.
+//
+// Rule: no user-visible string may be hardcoded in a component. If you need one,
+// add it here in both locales — the build fails if `en` misses a key from `zh`.
+
+export const zh = {
+  "brand": "Stemscribe",
+
+  "nav.newTask": "新建任务",
+  "nav.library": "资料库",
+  "nav.models": "模型中心",
+  "nav.settings": "设置",
+
+  "prefs.theme": "主题",
+  "prefs.theme.light": "明亮",
+  "prefs.theme.dark": "暗黑",
+  "prefs.lang": "语言",
+  "resource.gpu": "GPU 8.1 / 12 GB",
+  "resource.ready": "就绪",
+
+  "home.title": "新建任务",
+  "home.subtitle": "本地运行 · 音视频不出本机 · 仅润色会外发文本",
+  "home.placeholder": "粘贴链接，或把本地文件路径拖进来…",
+  "home.start": "开始",
+  "home.separate": "人声分离",
+  "home.polish": "LLM 润色",
+  "home.polishTag": "会外发文本",
+  "home.meta": "转写 medium · cuda12 · 分段 15s",
+  "home.polishNote": "润色会把逐字稿发送到你配置的端点（设置 → Provider）。音视频文件不会离开本机。",
+  "home.tasks": "任务",
+  "home.loading": "载入中…",
+  "home.empty": "还没有任务。粘贴一条链接，或拖入一个本地文件。",
+  "home.segments": "段",
+
+  "demo.interview": "示例：42 分钟行业访谈",
+  "demo.teardown": "示例：18 分钟产品拆解",
+  "demo.failed": "示例：下载失败的一集",
+  "demo.failedHint": "该视频无法下载（可能已删除或需要登录）",
+
+  "stage.queued": "排队中",
+  "stage.downloading": "下载中",
+  "stage.separating": "分离中",
+  "stage.transcribing": "转写中",
+  "stage.aligning": "对齐中",
+  "stage.polishing": "润色中",
+  "stage.exporting": "导出中",
+  "stage.done": "已完成",
+  "stage.failed": "失败",
+
+  "library.title": "资料库",
+  "library.subtitle": "每集一个自包含目录，可直接备份或用 grep 检索",
+  "library.colTitle": "标题",
+  "library.colId": "ID",
+  "library.colSegments": "段数",
+  "library.colDuration": "时长",
+  "library.colStatus": "状态",
+  "library.sample1": "示例：一场 42 分钟的访谈",
+  "library.sample2": "示例：产品拆解",
+
+  "models.title": "模型中心",
+  "models.subtitle": "模型与运行时安装到工作目录，可整目录迁移；校验值为空表示尚未实测",
+  "models.installed": "已安装",
+  "models.available": "可安装",
+  "models.colName": "名称",
+  "models.colKind": "类型",
+  "models.colSize": "体积",
+  "models.colVram": "显存",
+  "models.colLicense": "许可",
+  "models.colState": "状态",
+  "models.colTier": "档位",
+  "models.verified": "已校验",
+  "models.install": "安装",
+  "models.kind.stt": "转写",
+  "models.kind.sep": "分离",
+  "models.kind.runtime": "运行时",
+  "models.tier.light": "轻量",
+  "models.tier.max": "极致",
+  "models.footnote": "权重不随安装包分发，仅记录官方来源与校验值。安装前请确认对应许可。",
+
+  "settings.title": "设置",
+  "settings.subtitle": "端点与模型能力 · 密钥经 DPAPI 加密，不落明文",
+  "settings.provider": "Provider",
+  "settings.baseUrl": "Base URL",
+  "settings.apiKey": "API Key",
+  "settings.apiKeyPlaceholder": "本地端点可留空",
+  "settings.refresh": "刷新模型",
+  "settings.refreshing": "刷新中…",
+  "settings.refreshed": "已刷新 {n} 个模型",
+  "settings.hint": "填写后可刷新模型列表",
+  "settings.models": "模型",
+  "settings.source": "能力来源：{s}",
+  "settings.source.registry": "内置库",
+  "settings.source.probe": "探测",
+  "settings.source.manual": "手动覆盖",
+
+  "caps.context": "上下文窗口",
+  "caps.contextTokens": "{n} tokens",
+  "caps.maxOutput": "最大输出",
+  "caps.reasoning": "推理深度",
+  "caps.reasoningNote": "OpenAI 为 effort 档位，Anthropic 为 token 预算",
+  "caps.vision": "图像输入",
+  "caps.visionNote": "v0.1 未使用，但需可见以免误判",
+  "caps.tools": "Function Call",
+  "caps.toolsNote": "为后续 MCP 阶段预留",
+  "caps.stream": "流式",
+  "caps.temperature": "温度",
+  "caps.temperatureNote": "润色默认 0.3，避免编造",
+  "caps.topP": "Top P",
+  "caps.supported": "支持",
+  "caps.unsupported": "该端点不支持",
+  "caps.on": "开启",
+  "caps.off": "关闭",
+  "caps.greyNote": "灰色字段表示该端点不具备此能力，不会隐藏，也不会静默忽略。",
+} as const;
+
+export type Key = keyof typeof zh;
+
+export const en: Record<Key, string> = {
+  "brand": "Stemscribe",
+
+  "nav.newTask": "New task",
+  "nav.library": "Library",
+  "nav.models": "Models",
+  "nav.settings": "Settings",
+
+  "prefs.theme": "Theme",
+  "prefs.theme.light": "Light",
+  "prefs.theme.dark": "Dark",
+  "prefs.lang": "Language",
+  "resource.gpu": "GPU 8.1 / 12 GB",
+  "resource.ready": "ready",
+
+  "home.title": "New task",
+  "home.subtitle": "Runs locally · media never leaves this machine · only polishing sends text out",
+  "home.placeholder": "Paste a link, or drop a local file path…",
+  "home.start": "Start",
+  "home.separate": "Vocal separation",
+  "home.polish": "LLM polish",
+  "home.polishTag": "sends text out",
+  "home.meta": "transcribe medium · cuda12 · 15s segments",
+  "home.polishNote": "Polishing sends the transcript to the endpoint you configured (Settings → Provider). Media files never leave this machine.",
+  "home.tasks": "Tasks",
+  "home.loading": "Loading…",
+  "home.empty": "No tasks yet. Paste a link or drop in a local file.",
+  "home.segments": "seg",
+
+  "demo.interview": "Example: 42-minute interview",
+  "demo.teardown": "Example: 18-minute teardown",
+  "demo.failed": "Example: a failed download",
+  "demo.failedHint": "This video cannot be downloaded (removed or login required)",
+
+  "stage.queued": "Queued",
+  "stage.downloading": "Downloading",
+  "stage.separating": "Separating",
+  "stage.transcribing": "Transcribing",
+  "stage.aligning": "Aligning",
+  "stage.polishing": "Polishing",
+  "stage.exporting": "Exporting",
+  "stage.done": "Done",
+  "stage.failed": "Failed",
+
+  "library.title": "Library",
+  "library.subtitle": "One self-contained directory per episode — back it up or grep it directly",
+  "library.colTitle": "Title",
+  "library.colId": "ID",
+  "library.colSegments": "Segments",
+  "library.colDuration": "Duration",
+  "library.colStatus": "Status",
+  "library.sample1": "Example: a 42-minute interview",
+  "library.sample2": "Example: product teardown",
+
+  "models.title": "Model centre",
+  "models.subtitle": "Models and runtimes install into the work directory and move with it; a blank checksum means not yet measured",
+  "models.installed": "Installed",
+  "models.available": "Available",
+  "models.colName": "Name",
+  "models.colKind": "Kind",
+  "models.colSize": "Size",
+  "models.colVram": "VRAM",
+  "models.colLicense": "Licence",
+  "models.colState": "State",
+  "models.colTier": "Tier",
+  "models.verified": "Verified",
+  "models.install": "Install",
+  "models.kind.stt": "Transcribe",
+  "models.kind.sep": "Separate",
+  "models.kind.runtime": "Runtime",
+  "models.tier.light": "Light",
+  "models.tier.max": "Max",
+  "models.footnote": "Weights are never bundled; the registry only records official sources and checksums. Check the licence before installing.",
+
+  "settings.title": "Settings",
+  "settings.subtitle": "Endpoint and model capabilities · keys are DPAPI-encrypted, never stored in plaintext",
+  "settings.provider": "Provider",
+  "settings.baseUrl": "Base URL",
+  "settings.apiKey": "API Key",
+  "settings.apiKeyPlaceholder": "optional for local endpoints",
+  "settings.refresh": "Refresh models",
+  "settings.refreshing": "Refreshing…",
+  "settings.refreshed": "Refreshed {n} models",
+  "settings.hint": "Fill in the endpoint, then refresh the model list",
+  "settings.models": "Models",
+  "settings.source": "Capabilities: {s}",
+  "settings.source.registry": "built-in",
+  "settings.source.probe": "probed",
+  "settings.source.manual": "manual override",
+
+  "caps.context": "Context window",
+  "caps.contextTokens": "{n} tokens",
+  "caps.maxOutput": "Max output",
+  "caps.reasoning": "Reasoning depth",
+  "caps.reasoningNote": "OpenAI uses effort levels, Anthropic uses a token budget",
+  "caps.vision": "Image input",
+  "caps.visionNote": "unused in v0.1, but visible so nobody misjudges",
+  "caps.tools": "Function calling",
+  "caps.toolsNote": "reserved for the MCP stage",
+  "caps.stream": "Streaming",
+  "caps.temperature": "Temperature",
+  "caps.temperatureNote": "0.3 for polishing — it must not invent facts",
+  "caps.topP": "Top P",
+  "caps.supported": "supported",
+  "caps.unsupported": "not supported by this endpoint",
+  "caps.on": "on",
+  "caps.off": "off",
+  "caps.greyNote": "Greyed rows mean the endpoint lacks the capability. Nothing is hidden and nothing is silently ignored.",
+};
+
+export const dictionaries = { zh, en } as const;
+
+export type Lang = keyof typeof dictionaries;
+
+export type Vars = Record<string, string | number>;
+
+// translate interpolates {name} placeholders. Missing vars are left visible
+// rather than replaced with an empty string, so a bug is obvious in the UI.
+export function translate(lang: Lang, key: Key, vars?: Vars): string {
+  const table = dictionaries[lang] as Record<string, string>;
+  const raw = table[key] ?? key;
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (m, name: string) =>
+    name in vars ? String(vars[name]) : m,
+  );
+}
+
+export const LANGS: Lang[] = ["zh", "en"];

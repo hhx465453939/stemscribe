@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { usePrefs } from "./Providers";
 
 export function NewTask() {
+  const { t } = usePrefs();
   const [value, setValue] = useState("");
   const [separate, setSeparate] = useState(true);
   const [polish, setPolish] = useState(false);
@@ -12,42 +14,39 @@ export function NewTask() {
       <div className="row">
         <input
           className="input"
-          placeholder="粘贴链接，或把本地文件路径拖进来…"
+          placeholder={t("home.placeholder")}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          aria-label="任务输入"
+          aria-label={t("home.placeholder")}
         />
         <button className="btn btn--primary" type="button" disabled={value.trim() === ""}>
-          开始
+          {t("home.start")}
         </button>
       </div>
 
-      {/* Defaults must let 80% of users press Start immediately (PRD §4.2);
-          advanced knobs stay folded. */}
-      <div className="row" style={{ gap: "var(--sp-6)" }}>
+      {/* Defaults must let most users press Start immediately; advanced knobs stay folded. */}
+      <div className="row" style={{ gap: "var(--sp-6)", flexWrap: "wrap" }}>
         <label className="row" style={{ gap: "var(--sp-2)" }}>
           <input
             type="checkbox"
             checked={separate}
             onChange={(e) => setSeparate(e.target.checked)}
           />
-          <span>人声分离</span>
+          <span>{t("home.separate")}</span>
         </label>
 
         <label className="row" style={{ gap: "var(--sp-2)" }}>
           <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />
-          <span>LLM 润色</span>
-          <span className="tag">会外发文本</span>
+          <span>{t("home.polish")}</span>
+          <span className="tag">{t("home.polishTag")}</span>
         </label>
 
-        <span className="mono muted">
-          转写 medium · cuda12 · 分段 15s
-        </span>
+        <span className="mono muted">{t("home.meta")}</span>
       </div>
 
       {polish ? (
         <p className="mono muted" style={{ margin: 0 }}>
-          润色会把逐字稿发送到你配置的端点（设置 → Provider）。音视频文件不会离开本机。
+          {t("home.polishNote")}
         </p>
       ) : null}
     </div>

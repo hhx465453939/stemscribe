@@ -1,8 +1,13 @@
 // Typed bridge to the Go backend.
 //
-// In the Wails shell, window.go.main.App exposes the bindings. In a plain browser
-// (and during `next build`) there is no bridge, so we fall back to demo data.
-// The fallback is explicit and clearly labelled in the UI — never a silent fake.
+// In the shell, window.go.main.App exposes the bindings. In a plain browser (and
+// during `next build`) there is no bridge, so we fall back to demo data. The
+// fallback is explicit and the UI labels it — never a silent fake.
+//
+// Localisation rule: this module never returns user-visible prose. It returns
+// i18n keys and the components translate them (CHG-0007 AC-04).
+
+import type { Key } from "./i18n";
 
 export type TaskStage =
   | "queued"
@@ -17,11 +22,15 @@ export type TaskStage =
 
 export interface TaskView {
   id: string;
-  title: string;
+  /** Present for real tasks coming from the backend. */
+  title?: string;
+  /** Present for demo tasks, so their text localises with the UI. */
+  titleKey?: Key;
   stage: TaskStage;
   current: number;
   total: number;
   detail: string;
+  errorHintKey?: Key;
   errorHint?: string;
 }
 
@@ -72,7 +81,7 @@ export const isShell = (): boolean => bridge() !== null;
 const demoTasks: TaskView[] = [
   {
     id: "demo-1",
-    title: "示例：42 分钟行业访谈",
+    titleKey: "demo.interview",
     stage: "transcribing",
     current: 128,
     total: 240,
@@ -80,7 +89,7 @@ const demoTasks: TaskView[] = [
   },
   {
     id: "demo-2",
-    title: "示例：18 分钟产品拆解",
+    titleKey: "demo.teardown",
     stage: "done",
     current: 96,
     total: 96,
@@ -88,12 +97,12 @@ const demoTasks: TaskView[] = [
   },
   {
     id: "demo-3",
-    title: "示例：下载失败的一集",
+    titleKey: "demo.failed",
     stage: "failed",
     current: 0,
     total: 0,
     detail: "DL_403",
-    errorHint: "该视频无法下载（可能已删除或需要登录）",
+    errorHintKey: "demo.failedHint",
   },
 ];
 
@@ -162,17 +171,7 @@ export function formatContextWindow(n: number): string {
   return String(n);
 }
 
-export function stageLabel(stage: TaskStage): string {
-  const map: Record<TaskStage, string> = {
-    queued: "排队中",
-    downloading: "下载中",
-    separating: "分离中",
-    transcribing: "转写中",
-    aligning: "对齐中",
-    polishing: "润色中",
-    exporting: "导出中",
-    done: "已完成",
-    failed: "失败",
-  };
-  return map[stage];
+/** Maps a pipeline stage to its dictionary key; translation stays in the UI. */
+export function stageKey(stage: TaskStage): Key {
+  return `stage.${stage}` as Key;
 }

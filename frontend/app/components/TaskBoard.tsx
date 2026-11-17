@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listTasks, stageLabel, type TaskView } from "@/lib/api";
+import { listTasks, stageKey, type TaskView } from "@/lib/api";
+import { usePrefs } from "./Providers";
 
 const dotClass: Record<string, string> = {
   queued: "dot dot--queued",
@@ -10,14 +11,15 @@ const dotClass: Record<string, string> = {
 };
 
 export function TaskBoard() {
+  const { t } = usePrefs();
   const [tasks, setTasks] = useState<TaskView[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    listTasks().then((t) => {
+    listTasks().then((next) => {
       if (alive) {
-        setTasks(t);
+        setTasks(next);
         setLoaded(true);
       }
     });
@@ -27,48 +29,50 @@ export function TaskBoard() {
   }, []);
 
   if (!loaded) {
-    return <p className="mono muted">载入中…</p>;
+    return <p className="mono muted">{t("home.loading")}</p>;
   }
   if (tasks.length === 0) {
     return (
       <div className="empty">
         <pre className="empty__glyph">{`▁▂▃▅▇▅▃▂▁▂▃▅▇`}</pre>
-        还没有任务。粘贴一条链接，或拖入一个本地文件。
+        {t("home.empty")}
       </div>
     );
   }
 
   return (
     <div className="stack">
-      {tasks.map((t) => {
-        const running = !["done", "failed", "queued"].includes(t.stage);
-        const pct = t.total > 0 ? Math.round((t.current / t.total) * 100) : 0;
+      {tasks.map((task) => {
+        const running = !["done", "failed", "queued"].includes(task.stage);
+        const pct = task.total > 0 ? Math.round((task.current / task.total) * 100) : 0;
+        const title = task.titleKey ? t(task.titleKey) : (task.title ?? task.id);
+        const hint = task.errorHintKey ? t(task.errorHintKey) : (task.errorHint ?? task.detail);
 
         return (
-          <div key={t.id} className={running ? "panel panel--lit" : "panel"}>
+          <div key={task.id} className={running ? "panel panel--lit" : "panel"}>
             <div className="row row--between">
               <div className="row">
-                <span className={dotClass[t.stage] ?? "dot dot--run"} aria-hidden />
-                <strong>{t.title}</strong>
+                <span className={dotClass[task.stage] ?? "dot dot--run"} aria-hidden />
+                <strong>{title}</strong>
               </div>
-              <span className="mono">{stageLabel(t.stage)}</span>
+              <span className="mono">{t(stageKey(task.stage))}</span>
             </div>
 
-            {t.total > 0 ? (
+            {task.total > 0 ? (
               <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
-                <div className={t.stage === "done" ? "bar bar--done" : "bar"}>
+                <div className={task.stage === "done" ? "bar bar--done" : "bar"}>
                   <span style={{ width: `${pct}%` }} />
                 </div>
                 <div className="row row--between">
-                  <span className="mono">{t.detail}</span>
+                  <span className="mono">{task.detail}</span>
                   <span className="mono">
-                    {t.current}/{t.total} 段
+                    {task.current}/{task.total} {t("home.segments")}
                   </span>
                 </div>
               </div>
             ) : (
               <p className="mono muted" style={{ margin: "var(--sp-3) 0 0" }}>
-                {t.errorHint ?? t.detail}
+                {hint}
               </p>
             )}
           </div>

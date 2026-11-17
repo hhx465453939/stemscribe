@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { demoModels, formatContextWindow, type ProviderModel } from "@/lib/api";
+import {
+  demoModels,
+  formatContextWindow,
+  type ProviderModel,
+} from "@/lib/api";
+import { usePrefs } from "../components/Providers";
 
 // Unsupported capability fields are rendered greyed-out with an explicit reason
-// rather than hidden (PRD §5). The user must be able to see what the model they
+// rather than hidden (PRD F-07). The user must be able to see what the model they
 // paid for actually supports.
 function CapRow({
   label,
@@ -23,12 +28,13 @@ function CapRow({
       <td className="mono" style={{ width: "28%" }}>
         {value}
       </td>
-      <td className="muted">{supported ? note ?? "支持" : note ?? "该端点不支持"}</td>
+      <td className="muted">{note}</td>
     </tr>
   );
 }
 
 export default function SettingsPage() {
+  const { t } = usePrefs();
   const [models] = useState<ProviderModel[]>(demoModels);
   const [selected, setSelected] = useState(0);
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:11434/v1");
@@ -37,17 +43,27 @@ export default function SettingsPage() {
   const [refreshed, setRefreshed] = useState(false);
 
   const model = models[selected];
+  const sourceLabel = model
+    ? t("settings.source", {
+        s:
+          model.caps.caps_source === "manual"
+            ? t("settings.source.manual")
+            : model.caps.caps_source === "registry"
+              ? t("settings.source.registry")
+              : t("settings.source.probe"),
+      })
+    : "";
 
   return (
     <>
-      <h1 className="page-title">设置</h1>
-      <p className="page-sub">端点与模型能力 · 密钥经 DPAPI 加密，不落明文</p>
+      <h1 className="page-title">{t("settings.title")}</h1>
+      <p className="page-sub">{t("settings.subtitle")}</p>
 
-      <h2 className="section-title">Provider</h2>
+      <h2 className="section-title">{t("settings.provider")}</h2>
       <div className="panel stack">
         <div className="row">
           <label style={{ width: 96 }} className="muted">
-            Base URL
+            {t("settings.baseUrl")}
           </label>
           <input
             className="input"
@@ -59,12 +75,12 @@ export default function SettingsPage() {
 
         <div className="row">
           <label style={{ width: 96 }} className="muted">
-            API Key
+            {t("settings.apiKey")}
           </label>
           <input
             className="input"
             type="password"
-            placeholder="本地端点可留空"
+            placeholder={t("settings.apiKeyPlaceholder")}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             spellCheck={false}
@@ -73,7 +89,7 @@ export default function SettingsPage() {
 
         <div className="row row--between">
           <span className="mono muted">
-            {refreshed ? `已刷新 ${models.length} 个模型` : "填写后可刷新模型列表"}
+            {refreshed ? t("settings.refreshed", { n: models.length }) : t("settings.hint")}
           </span>
           <button
             className="btn"
@@ -88,12 +104,12 @@ export default function SettingsPage() {
             }}
             disabled={refreshing}
           >
-            {refreshing ? "刷新中…" : "刷新模型"}
+            {refreshing ? t("settings.refreshing") : t("settings.refresh")}
           </button>
         </div>
       </div>
 
-      <h2 className="section-title">模型</h2>
+      <h2 className="section-title">{t("settings.models")}</h2>
       <div className="row" style={{ flexWrap: "wrap", gap: "var(--sp-2)" }}>
         {models.map((m, i) => (
           <button
@@ -112,53 +128,64 @@ export default function SettingsPage() {
           <div className="row row--between">
             <strong className="mono">{model.id}</strong>
             <span className={model.caps.caps_source === "manual" ? "tag tag--manual" : "tag"}>
-              能力来源：{model.caps.caps_source === "manual" ? "手动覆盖" : model.caps.caps_source === "registry" ? "内置库" : "探测"}
+              {sourceLabel}
             </span>
           </div>
 
           <table className="grid" style={{ marginTop: "var(--sp-3)" }}>
             <tbody>
               <CapRow
-                label="上下文窗口"
+                label={t("caps.context")}
                 value={formatContextWindow(model.caps.context_window)}
                 supported
-                note={`${model.caps.context_window.toLocaleString()} tokens`}
+                note={t("caps.contextTokens", { n: model.caps.context_window.toLocaleString() })}
               />
               <CapRow
-                label="最大输出"
+                label={t("caps.maxOutput")}
                 value={model.caps.max_output_tokens.toLocaleString()}
                 supported
+                note={t("caps.supported")}
               />
               <CapRow
-                label="推理深度"
+                label={t("caps.reasoning")}
                 value={
                   model.caps.reasoning_supported
                     ? `${model.caps.reasoning_mode ?? "effort"} · ${model.params.reasoning_effort ?? "medium"}`
-                    : "不支持"
+                    : t("caps.unsupported")
                 }
                 supported={model.caps.reasoning_supported}
-                note="OpenAI 为 effort 档位，Anthropic 为 token 预算"
+                note={t("caps.reasoningNote")}
               />
               <CapRow
-                label="图像输入"
-                value={model.caps.vision ? "支持" : "不支持"}
+                label={t("caps.vision")}
+                value={model.caps.vision ? t("caps.supported") : t("caps.unsupported")}
                 supported={model.caps.vision}
-                note="v0.1 未使用，但需可见以免误判"
+                note={t("caps.visionNote")}
               />
               <CapRow
-                label="Function Call"
-                value={model.caps.tools ? "支持" : "不支持"}
+                label={t("caps.tools")}
+                value={model.caps.tools ? t("caps.supported") : t("caps.unsupported")}
                 supported={model.caps.tools}
-                note="为后续 MCP 阶段预留"
+                note={t("caps.toolsNote")}
               />
-              <CapRow label="流式" value={model.caps.streaming ? "开启" : "关闭"} supported />
-              <CapRow label="温度" value={String(model.params.temperature)} supported note="润色默认 0.3，避免编造" />
-              <CapRow label="Top P" value={String(model.params.top_p)} supported />
+              <CapRow
+                label={t("caps.stream")}
+                value={model.caps.streaming ? t("caps.on") : t("caps.off")}
+                supported={model.caps.streaming}
+                note={t("caps.supported")}
+              />
+              <CapRow
+                label={t("caps.temperature")}
+                value={String(model.params.temperature)}
+                supported
+                note={t("caps.temperatureNote")}
+              />
+              <CapRow label={t("caps.topP")} value={String(model.params.top_p)} supported note={t("caps.supported")} />
             </tbody>
           </table>
 
           <p className="mono muted" style={{ margin: "var(--sp-3) 0 0" }}>
-            灰色字段表示该端点不具备此能力，不会隐藏，也不会静默忽略。
+            {t("caps.greyNote")}
           </p>
         </div>
       ) : null}

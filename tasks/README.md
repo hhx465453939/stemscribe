@@ -13,6 +13,7 @@
 | CHG-0004 | LLM Layer | planned | `internal/provider/**`、`internal/vault/**`、`prompts/**` | 0001（可与 0002/0003 并行） |
 | CHG-0005 | Frontend | planned | `frontend/**` | 0003（需 IPC 契约冻结） |
 | CHG-0006 | Scheduling & Agent Integration | planned | `internal/mcpserver/**`、`internal/resource/**`（并发部分） | 0003 |
+| CHG-0007 | Theming & Localization（双主题 + 中英双语） | **approved** | `frontend/app/**`、`frontend/lib/{i18n,api}.ts`、`scripts/{i18n-check.sh,contrast.py}`、`docs/images/app-*`、`README*.md`、`docs/UI-DESIGN.md` §3/§14 | — |
 
 > `planned` 的 CHG 目录尚未创建。开工时复制 `CHG-0001/` 结构并改写内容，然后把 status 从 `draft` 提到 `approved`。
 
