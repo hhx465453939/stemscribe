@@ -81,7 +81,7 @@ WCAG 2.1 相对亮度公式：`L = 0.2126R + 0.7152G + 0.0722B`（各通道先�
 | 前端路由数 | 4（`/`、`/library`、`/models`、`/settings`） | `frontend/out/*/index.html` |
 | 字典键数 | 89（zh 为准，en 由类型强制同集） | `frontend/lib/i18n.ts` |
 | 构建产物 | `frontend/out/`，`pnpm build` 通过 | 本地执行 |
-| 单文件 exe 体积 | 7.2 MB（含内嵌 UI） | `ls -lh dist/stemscribe.exe` |
+| 单文件 exe 体积 | **9.9 MB**（含 1.0 MB 内嵌 UI）。i18n 落地前为 7.2 MB；增长来自字典与 Providers，并非残留旧构建产物（`frontend/out` 实测 995 KB） | `du -sh frontend/out` + `ls -lh dist/stemscribe.exe` |
 
 ## 4. 缺口登记（诚实）
 
@@ -139,7 +139,7 @@ ok   literal: no hardcoded CJK in frontend/app/**/*.tsx
 | `tsc --noEmit` | 0 error |
 | `next lint` | 0 warning / 0 error |
 | `next build` | 4 路由 + 404 全部预渲染，`out/` 产出 |
-| 单文件 exe | 7.2 MB（内嵌 UI） |
+| 单文件 exe | **9.9 MB**（内嵌 UI 1.0 MB）；远低于 N-02 的 40 MB 上限 |
 | 截图 | 1400×940 @2x（2800×1880），取自运行中的 exe |
 
 ### 6.4 本 CHG 遗留（不阻塞关闭）
