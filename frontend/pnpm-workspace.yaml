@@ -1,0 +1,6 @@
+# pnpm 11 asks for an explicit decision on every dependency that ships a build
+# script. sharp is Next's optional native image optimiser; the desktop shell
+# builds a static export with `images.unoptimized: true`, so its native build is
+# never needed and must not gate every `pnpm run` with ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  sharp: false

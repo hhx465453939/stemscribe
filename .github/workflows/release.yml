@@ -1,0 +1,112 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.0.1-rc1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event.inputs.tag }}') { '${{ github.event.inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $ver = $tag.TrimStart('v')
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$ver" >> $env:GITHUB_OUTPUT
+          Write-Host "tag=$tag version=$ver"
+
+      - name: Frontend static export
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          if (-not (Test-Path out/index.html)) { throw 'frontend/out/index.html missing' }
+
+      - name: Go tests
+        run: go test ./... -count=1
+
+      - name: Build binary
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $env:CGO_ENABLED = '0'
+          go build -trimpath -ldflags "-s -w -X main.version=$v" -o dist/stemscribe.exe ./cmd/stemscribe
+          if (-not (Test-Path dist/stemscribe.exe)) { throw 'binary missing' }
+
+      - name: Assemble portable zip
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          $stage = "stage/Stemscribe-$tag"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item dist/stemscribe.exe $stage/
+          Copy-Item README.md, README.zh-CN.md, LICENSE $stage/
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'ui') | Out-Null
+          Copy-Item -Recurse frontend/out/* (Join-Path $stage 'ui')
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'docs') | Out-Null
+          Copy-Item docs/*.md (Join-Path $stage 'docs')
+          Compress-Archive -Path $stage -DestinationPath "dist/Stemscribe-$tag-portable.zip" -Force
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Push-Location dist
+          $lines = Get-ChildItem -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          $lines | Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+          Pop-Location
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Stemscribe ${{ steps.ver.outputs.tag }}
+          draft: true
+          prerelease: ${{ contains(steps.ver.outputs.tag, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          body: |
+            Scaffold release: CLI binary + static UI export.
+
+            **Not yet included** (tracked in CHG-0001/CHG-0002):
+            - Wails desktop shell (`setup.exe` installer)
+            - whisper.cpp / separator runtimes and model downloads
+            - code signing
+
+            Verify downloads with the attached `SHA256SUMS.txt`.

@@ -1,7 +1,7 @@
 # AGENTS.md - Stemscribe
 
 Scope: this directory and all subdirectories.
-本文件与全局 `C:\Users\DamnCheater\AGENTS.md` **叠加生效**；冲突时以本文件的项目特化条款为准。
+本文件与全局 `~/.agents/AGENTS.md`（Windows: `%USERPROFILE%\AGENTS.md`）**叠加生效**；冲突时以本文件的项目特化条款为准。
 
 ## Mission
 
