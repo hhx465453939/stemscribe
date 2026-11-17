@@ -30,8 +30,7 @@ const LANG_KEY = "stemscribe.lang";
 // keeps a single source of truth and makes `?theme=dark&lang=en` screenshots
 // deterministic without any scripted clicking.
 function readTheme(): Theme {
-  const v = document.documentElement.dataset.theme;
-  return v === "dark" ? "dark" : "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }
 
 function readLang(): Lang {
@@ -43,44 +42,55 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Anything else would make hydration text mismatch; instead we adopt the real
   // preference in an effect, so colours are already correct (boot script) and
   // only non-default locales swap their copy on the first frame.
-  const [theme, setTheme] = useState<Theme>("light");
-  const [lang, setLang] = useState<Lang>("zh");
+  const [theme, setThemeState] = useState<Theme>("light");
+  const [lang, setLangState] = useState<Lang>("zh");
   const [adopted, setAdopted] = useState(false);
 
   useEffect(() => {
-    setTheme(readTheme());
-    setLang(readLang());
+    setThemeState(readTheme());
+    setLangState(readLang());
     setAdopted(true);
   }, []);
 
   useEffect(() => {
     if (!adopted) return;
     document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      /* private mode: preference just will not persist */
-    }
   }, [theme, adopted]);
 
   useEffect(() => {
     if (!adopted) return;
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  }, [lang, adopted]);
+
+  // Persist inside the user action, never in an effect.
+  //
+  // Writing from an effect meant the value derived from `?theme=`/`?lang=` was
+  // also written back, so opening a documentation deep link silently overwrote
+  // the reader's saved preference. Persisting only on an explicit choice keeps
+  // URL overrides ephemeral, which is what SPEC AC-08 requires.
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
     try {
-      localStorage.setItem(LANG_KEY, lang);
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* private mode: preference just will not persist */
+    }
+  }, []);
+
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    try {
+      localStorage.setItem(LANG_KEY, next);
     } catch {
       /* ignore */
     }
-  }, [lang, adopted]);
+  }, []);
 
-  const t = useCallback(
-    (key: Key, vars?: Vars) => translate(lang, key, vars),
-    [lang],
-  );
+  const t = useCallback((key: Key, vars?: Vars) => translate(lang, key, vars), [lang]);
 
   const value = useMemo<Prefs>(
     () => ({ theme, setTheme, lang, setLang, t }),
-    [theme, lang, t],
+    [theme, setTheme, lang, setLang, t],
   );
 
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>;

@@ -10,7 +10,7 @@
 | 2026-11-17 | proposed | 立项：双主题 + 双语工程契约（SPEC_READY） | agent |
 | 2026-11-17 | **approved** | owner 会话明确指令：「美术风格明亮风格+暗黑风格，两个都要有，还要中英双语」＋「剩余的开发你也继续做掉吧」→ 视为对本 SPEC 的批准 | owner |
 | — | in_progress | M1–M5 实现与验证 | agent |
-| — | closed | 待 AC-01…AC-10 全绿后关闭 | — |
+| 2026-11-17 | closed | AC-01…AC-10 全绿；实测证据见 `TRACEABILITY.md` §6/§7 | agent |
 
 > 按 `/ai-spec`：`SPEC_READY` ≠ 批准。本行 `approved` 的依据是 owner 的**明确书面指令**（上表引用原文），
 > 不是 agent 自行假定。commit 与 push 仍需单独授权（见 SPEC §7）。
@@ -22,7 +22,8 @@
 | 违反顺序 | owner 提出需求后，我**先写了 6 个文件**（`globals.css`/`layout.tsx`/`Providers.tsx`/`Sidebar.tsx`/`page.tsx`/`i18n.ts`），然后才补立项 |
 | 违反的规则 | 项目 `AGENTS.md`：「无对应 CHG 就不动手，先立项」 |
 | 处置 | 不移除已写代码（避免做无用功），但在 `TRACEABILITY.md` §2 标记为「已写、未验证」，不计入完成；owner 否决则该批文件整体 revert |
-| 已发现的真实缺陷 | `--text-3` 两主题均 <4.5:1、明亮 `--lamp` 作为文字 3.7:1 —— 已在 `TRACEABILITY.md` §3.1 登记为 M3 必修项 |
+| 已发现的真实缺陷 | `--text-3` 两主题均 <4.5:1、明亮 `--lamp` 作为文字 3.7:1 —— 已在 `TRACEABILITY.md` §3.1 登记为 M3 必修项（已修，终值见 §6.1） |
+| 复核期新发现的缺陷 | `Providers` 把 URL 覆盖值写回了 `localStorage`（违反 AC-08「不写回」）—— 已修并实测，记录在 `TRACEABILITY.md` §7 |
 
 ## 决策增补
 

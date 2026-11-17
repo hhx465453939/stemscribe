@@ -149,3 +149,28 @@ ok   literal: no hardcoded CJK in frontend/app/**/*.tsx
 | 首帧文案切换 | 非默认语言用户会看到一次 zh→en 文本切换（颜色不跳）。彻底消除需放弃静态预渲染，代价大于收益 |
 | 截图未进 CI | 依赖本机 Chrome headless；截图属发布物料，人工生成入库 |
 | 第三语言 / RTL | 非目标（PRD §3） |
+
+## 7. 收尾修正（复核 AC-08 时发现的自有缺陷）
+
+| 项 | 内容 |
+|---|---|
+| 缺陷 | `Providers` 把主题/语言的持久化写在 `useEffect` 里，导致 **URL 覆盖值也被写入 localStorage**。打开一次文档深链（`?theme=dark`）就会静默覆盖读者已存的偏好，违反 AC-08 的「不写回」语义 |
+| 根因 | 持久化挂在「状态变化」上，而不是「用户动作」上 |
+| 修法 | 持久化移入 `setTheme` / `setLang` 回调；effect 只负责同步 `<html data-theme>` 与 `lang` |
+| 实测 1 | 同一 Chrome profile，带 `?theme=dark&lang=en` → `<html lang="en" data-theme="dark">` |
+| 实测 2 | 同一 profile，**无参数**再次加载 → `<html lang="zh-CN" data-theme="light">`（证明未被写回） |
+| 结论 | AC-08 通过（实测，非推论） |
+
+### 7.1 全量验证（关闭前）
+
+| 检查 | 结果 |
+|---|---|
+| `go build ./... && go vet ./... && go test ./...` | 10 包全绿 |
+| `pnpm run typecheck` | 0 error |
+| `pnpm run lint` | 0 warning / 0 error |
+| `pnpm run build` | 4 路由 + 404 全部预渲染 |
+| `bash scripts/verify-contract.sh` | passed |
+| `bash scripts/i18n-check.sh` | tokens / parity / literal 3/3 |
+| `python scripts/contrast.py` | 12 个 text 对全 PASS |
+| `bash scripts/redact-scan.sh` | 0 命中 |
+| `scripts/smoke-test.ps1` | 20/20 断言通过 |
