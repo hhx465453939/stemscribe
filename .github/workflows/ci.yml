@@ -32,15 +32,18 @@ jobs:
           set -euo pipefail
           for f in docs/ARCHITECTURE.md docs/PIPELINE.md docs/MODEL-REGISTRY.md \
                    docs/RESOURCE-SCHEDULER.md docs/LLM-PROVIDERS.md docs/UI-DESIGN.md \
-                   docs/DECISIONS.md docs/ROADMAP.md; do
+                   docs/DECISIONS.md docs/ROADMAP.md docs/UPSTREAM-RESEARCH.md; do
             [ -s "$f" ] || { echo "::error missing or empty: $f"; exit 1; }
           done
       - name: JSON schemas parse
         run: |
+          set -euo pipefail
           for f in docs/schema/*.json; do
-            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
+            python3 -c "import json,sys; json.load(open(sys.argv[1],encoding='utf-8'))" "$f"
             echo "ok $f"
           done
+      - name: Redaction scan (no real hosts, paths or credentials)
+        run: bash scripts/redact-scan.sh
 
   go:
     name: go (build + vet + test)
@@ -50,12 +53,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache: true
+          # No `cache: true` yet: this module has zero external dependencies, so
+          # there is no go.sum for the action to key on and it warns on every run.
+          # Re-enable when the first real dependency lands (CHG-0002).
       - name: Build
         run: go build ./...
       - name: Vet
         run: go vet ./...
-      - name: Test
+      - name: Test (race)
         run: go test ./... -race -count=1
       - name: Coverage (resource + provider)
         run: |
@@ -73,30 +78,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pin the same pnpm major as local development. pnpm 9 treats a
+      # pnpm-workspace.yaml without a `packages:` field as a hard error and does
+      # not understand `allowBuilds`, so version skew fails the install step.
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11.15.1
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Skip when the frontend does not exist yet
-        id: check
-        run: |
-          if [ -f frontend/package.json ]; then echo "present=yes" >> "$GITHUB_OUTPUT"; else echo "present=no" >> "$GITHUB_OUTPUT"; fi
       - name: Install
-        if: steps.check.outputs.present == 'yes'
         working-directory: frontend
         run: pnpm install --frozen-lockfile
       - name: Lint
-        if: steps.check.outputs.present == 'yes'
         working-directory: frontend
-        run: pnpm lint
+        run: pnpm run lint
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm run typecheck
       - name: Build (static export)
-        if: steps.check.outputs.present == 'yes'
         working-directory: frontend
-        run: pnpm build
+        run: pnpm run build
       - name: Verify static export output
-        if: steps.check.outputs.present == 'yes'
-        run: test -f frontend/out/index.html || { echo "::error frontend/out/index.html missing"; exit 1; }
+        run: |
+          set -euo pipefail
+          test -f frontend/out/index.html || { echo "::error frontend/out/index.html missing"; exit 1; }
+          for p in library models settings; do
+            test -f "frontend/out/$p/index.html" || { echo "::error frontend/out/$p/index.html missing"; exit 1; }
+          done
