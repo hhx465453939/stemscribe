@@ -156,9 +156,57 @@
 | AC-04 其余模型 sha256 | `whisper-tiny` 已实测；base/small/medium/large-v3 仍 `tbd` | 未下载即不编造（铁律 2） |
 | cuda12 运行时产物 | 仍 `tbd` | CI 无 CUDA-capable runner；已做 job 级 opt-in |
 | 界面与后端接线 | 窗口已开，但界面仍展示 demo 数据 | 属 CHG-0005（前端），需绑定 `ListTasks`/`ProbeHardware` |
-| ffmpeg 未进 registry | 本地已装可用，但未作为可下载运行时登记 | 需选定固定版本并实测 sha256 后回填 |
+| ~~ffmpeg 未进 registry~~ | ✅ **已登记 + 真装成功**（见 5.8） | — |
 
-### 5.6 第四轮实测：真视频 → 文字（AC-05 关闭）
+### 5.6 第五轮：ffmpeg 进 registry（F-04 关闭）
+
+| 项 | 值 |
+|---|---|
+| 固定 tag | `autobuild-2026-11-18-12-39`（**不可变**；`latest` 会随上游发版移动，用它必然导致校验值失效） |
+| 资产 | `ffmpeg-N-129046-g3a78197c4c-win64-lgpl-shared.zip` |
+| 实测体积 | `82,947,887` B |
+| 实测 sha256 | `2fd92fe6fb754de102c06fbe4918705adb6e914b209c481a318498031affec27` |
+| 许可选型 | LGPL（解码 + PCM 编码即可满足 demux；GPL 独有编码器只会多背 ~90 MB） |
+
+真实验证（先删掉手工放置的 `master/`，确保起作用的不是它）：
+
+```
+stemscribe runtime install ffmpeg-win-x64
+  from https://github.com/BtbN/.../autobuild-2026-11-18-12-39/...
+  verified sha256 2fd92fe6fb75
+  installed to ...\runtimes\ffmpeg\N-129046
+
+stemscribe run --input test.mp4 --model whisper-tiny
+  ✓ demux → ✓ transcribe → ✓ align → ✓ export   segments: 2
+```
+
+同批修掉的三处“装了却找不到”隐患：
+
+| # | 隐患 | 后果 |
+|---|---|---|
+| 11 | 版本校验只认 semver，而 ffmpeg 发布 `N-129046` | 只能要么填假版本号，要么根本不上架 |
+| 12 | 上游包二进制在 `bin/`，`FindFFmpeg` 只查版本目录根 | 装成功后仍报 `missing ffmpeg` |
+| 13 | 安装目录无条件拼后端名，ffmpeg 变成 `N-129046-none` | 无意义后缀直接暴露在用户工作目录里 |
+
+### 5.7 CHG-0002 关闭情况（如实）
+
+| AC | 状态 |
+|---|---|
+| AC-01/02/03 运行时自建 + 无 CUDA 串味 + 实测值 | ✅ |
+| AC-04 registry 实测回填 | 🟡 cpu/vulkan/whisper-tiny/ffmpeg 已实测；**base/small/medium/large-v3 与 cuda12 仍 tbd** |
+| AC-05 真实 demux | ✅ ffprobe 验到 pcm_s16le/16k/mono |
+| AC-06/AC-12 真 e2e | ✅ 音频与视频两条路都出真文本 |
+| AC-07 原生窗口客户端 | ✅ 进程标题 + 18 个 WebView2 子进程 + **真窗口截图** |
+| AC-08 取消不留孤儿 | ✅ `TestDefaultExecCancelKillsChild` 0.17s（`ping -n 30` 否则需 ~29s） |
+| AC-09/AC-10 后端回退 + 缺项一次列全 | ✅ 只装 cpu 运行时时有 N 卡也能跑 |
+| AC-11 UI 未发布不可装 | ⬜ 属前端（CHG-0005） |
+
+**不能关 CHG 的两个硬阻塞**：
+
+1. **其余模型 sha256**：需要再下 147 MB / 487 MB / 1.5 GB / 3 GB；每下完一个才能回填一个。未下载就不填（铁律 2）。
+2. **cuda12 运行时产物**：CI 无 CUDA-capable runner，已在 `runtime.yml` 做成 job 级 opt-in，跑到带 CUDA 的机器上才能产。
+
+### 5.8 第四轮实测：真视频 → 文字（AC-05 关闭）
 
 | 步骤 | 命令 | 结果 |
 |---|---|---|
@@ -168,7 +216,7 @@
 | demux 产物合规 | `ffprobe audio/16k.wav` | `codec_name=pcm_s16le sample_rate=16000 channels=1` |
 | 逐字稿来自音轨 | `cat text/transcript.md` | `[00:00:00] The Quick Brown Fox jumps over the lazy dog.` |
 
-### 5.7 第四轮修掉的两个真缺陷
+### 5.9 第四轮修掉的两个真缺陷
 
 | # | 缺陷 | 怎么暴露的 |
 |---|---|---|
