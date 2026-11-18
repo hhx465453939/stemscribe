@@ -28,6 +28,10 @@ func main() {
 		os.Exit(cmdRun(os.Args[2:]))
 	case "probe":
 		os.Exit(cmdProbe(os.Args[2:]))
+	case "runtime":
+		os.Exit(cmdRuntime(os.Args[2:]))
+	case "model":
+		os.Exit(cmdModel(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Printf("stemscribe %s\n", version)
 	case "help", "--help", "-h":
@@ -47,6 +51,8 @@ Usage:
   stemscribe shell   [--no-open]    serve the embedded UI on loopback and open it
   stemscribe run     --input <file> [--workdir <dir>] [--no-separate] [--duration-ms N]
   stemscribe probe   [--workdir <dir>]
+  stemscribe runtime install <runtime-id>
+  stemscribe model   install <model-id>
   stemscribe version
 
 Notes:
