@@ -10,9 +10,26 @@ import (
 	"github.com/hhx465453939/stemscribe/internal/resource"
 )
 
-// backendFor mirrors what `stemscribe probe` reports, so run and probe can never
-// disagree about which backend is in effect.
-func backendFor(locked string) (registry.Backend, string) {
+// backendPreference is the order to try once hardware is known.
+func backendPreference(preferred registry.Backend) []registry.Backend {
+	switch preferred {
+	case registry.BackendCUDA12:
+		return []registry.Backend{registry.BackendCUDA12, registry.BackendVulkan, registry.BackendCPU}
+	case registry.BackendVulkan:
+		return []registry.Backend{registry.BackendVulkan, registry.BackendCPU}
+	default:
+		return []registry.Backend{registry.BackendCPU}
+	}
+}
+
+// backendFor picks the backend that will actually be used.
+//
+// Hardware capability alone is not enough: a machine with an NVIDIA GPU but only
+// the cpu runtime installed must still run, otherwise "install the cpu runtime"
+// is a dead end on exactly the machines most likely to try it. The installed set
+// is therefore consulted, and any fallback is named in the reason so the UI can
+// show why the GPU is idle.
+func backendFor(locked, workdir string) (registry.Backend, string) {
 	probe := resource.NewProbe()
 	hw := resource.Hardware{}
 	if total, err := probe.TotalMB(); err == nil && total > 0 {
@@ -23,17 +40,26 @@ func backendFor(locked string) (registry.Backend, string) {
 	hw.VulkanAvailable = resource.VulkanPresent()
 
 	sel := resource.SelectBackend(hw, resource.Backend(locked))
-	// resource and registry name the same backends; convert through string so a
-	// typo becomes a compile-time-visible empty map lookup rather than a silent
-	// mismatch.
+
+	var preferred registry.Backend
 	switch string(sel.Backend) {
 	case string(registry.BackendCUDA12):
-		return registry.BackendCUDA12, sel.Reason
+		preferred = registry.BackendCUDA12
 	case string(registry.BackendVulkan):
-		return registry.BackendVulkan, sel.Reason
+		preferred = registry.BackendVulkan
 	default:
-		return registry.BackendCPU, sel.Reason
+		preferred = registry.BackendCPU
 	}
+
+	for _, candidate := range backendPreference(preferred) {
+		if _, ok := engine.FindRuntime(workdir, candidate); ok {
+			if candidate == preferred {
+				return candidate, sel.Reason
+			}
+			return candidate, fmt.Sprintf("%s preferred but not installed; using %s", preferred, candidate)
+		}
+	}
+	return preferred, sel.Reason + "; no runtime installed yet"
 }
 
 // buildEngine assembles the pipeline engine.
@@ -51,7 +77,7 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int) (pipelin
 		return nil, "", fmt.Errorf("load registry: %w", err)
 	}
 
-	backend, reason := backendFor(locked)
+	backend, reason := backendFor(locked, workdir)
 	missing := engine.Diagnose(workdir, reg, backend, modelID)
 	if !missing.Empty() {
 		// Surface every gap at once; the caller prints this verbatim.
