@@ -102,6 +102,25 @@
 | 无真实音频与模型 | AC-06/AC-12 无法出证据 | 网络恢复后下 `ggml-tiny`（77 MB）+ 生成 TTS 语音 |
 | ffmpeg 未安装 | AC-05 只能靠注入式单测 | 下载静态构建放入 `runtimes/ffmpeg/<ver>/` |
 
+### 5.2 本会话的实测证据（真跑，不是推论）
+
+| 项 | 命令 | 结果 | 对应 AC |
+|---|---|---|---|
+| 三变体自建 | `runtime.yml` run 44232117583 | cpu ✅ / vulkan ✅ / cuda12 正确 skipped（opt-in）；非 CUDA 包断言无 cudart/cublas | AC-01、AC-02 |
+| 实测值产出 | 同上，`registry-values` job | cpu 892,232 B / `d4a658f4…`；vulkan 14,997,989 B / `be16e210…` | AC-03 |
+| 真实下载 + 校验 | `stemscribe runtime install whispercpp-cpu-win-x64` | 从 release 下载 → `verified sha256 d4a658f47e8c` → 解开出 `whisper-cli.exe` + `VERIFIED.json` + `PROVENANCE.txt` | AC-04 |
+| 后端回退 | 只装 cpu 运行时（本机有 RTX 3060）后 `run` | 不再报 missing runtime，自动选 cpu | AC-09 |
+| 缺项一次列全 | 同上 | 一次输出 model + ffmpeg 两条，各带安装命令 | AC-10 |
+| tbd 不可装 | `runtime install` / `model install` 于 tbd 条目 | 明确拒绝：`refusing to install unverified bytes` | F-10 |
+
+**过程中修掉的三个真缺陷**（都是跑起来才暴露的）：
+
+1. job 级 `if` 用了 `matrix` 上下文 → 整个 workflow 解析失败、零 job；已拆成独立 CUDA job。
+2. 只 checkout 了 whisper.cpp，覆盖掉本仓库 → 打包脚本不存在；已补本仓库 checkout。
+3. 后端选择只看硬件能力 → 有 N 卡但只装 cpu 运行时则拒绝运行；已改为“按偏好顺序返回第一个已安装的后端”。
+
+外加一处数据缺陷：registry 的下载 URL 与 CI 实际资产名不一致（会 404），已改为真实资产路径。
+
 ## 6. 与既有 CHG 的关系
 
 | CHG | 关系 |
