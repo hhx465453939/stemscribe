@@ -2,13 +2,16 @@ name: runtime
 
 # Builds whisper.cpp ourselves instead of trusting a stranger's binary (ADR-013).
 #
-# Why three variants: Vulkan covers AMD/Intel/integrated GPUs with a
-# self-contained archive, CUDA gives NVIDIA its performance ceiling, CPU is the
-# always-works fallback (ADR-012, owner decision: ship both GPU backends).
+# Three backends, per the owner decision: Vulkan covers AMD/Intel/integrated GPUs
+# with a self-contained archive, CUDA gives NVIDIA its ceiling, CPU always works.
 #
-# The job also emits `registry-values.json` — the measured size + sha256 of each
-# archive — so the catalog can be filled with real numbers instead of guesses.
-# That is the only sanctioned way this project's registry gets a checksum.
+# The job also emits registry-values.json (measured size + sha256), because a
+# measured value is the only sanctioned way this registry gets a checksum.
+#
+# CUDA is opt-in: the hosted image carries no CUDA toolkit, and four attempts at
+# installing or discovering one proved unreliable. Keeping it in the default
+# matrix would leave this workflow permanently red, which is worse than an
+# explicit gate with a named blocker.
 
 on:
   workflow_dispatch:
@@ -17,6 +20,10 @@ on:
         description: 'Release tag to attach assets to (empty = build only)'
         required: false
         default: ''
+      with_cuda:
+        description: 'Also build cuda12 (requires a CUDA-capable runner)'
+        type: boolean
+        default: false
   push:
     tags: ['runtime-v*']
 
@@ -30,6 +37,9 @@ jobs:
   build:
     name: build ${{ matrix.backend }}
     runs-on: windows-latest
+    # Job-level gate: `exit 0` only ends one step, so an unrequested opt-in
+    # variant must skip the whole job or its later steps still run and fail.
+    if: ${{ !(matrix.if_cuda && !inputs.with_cuda) }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,9 +49,10 @@ jobs:
           - backend: vulkan
             cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=ON'
           - backend: cuda12
-            # -allow-unsupported-compiler is the supported nvcc escape hatch for a
-            # host MSVC newer than the toolkit officially lists. Pinning an older
-            # VS instead would break again on the next runner image update.
+            if_cuda: true
+            # -allow-unsupported-compiler is nvcc's supported escape hatch for a
+            # host MSVC newer than the toolkit lists. Pinning an older VS instead
+            # would break again on the next runner image update.
             cmake_flags: '-DGGML_CUDA=ON -DGGML_VULKAN=OFF -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler'
     steps:
       - name: Checkout whisper.cpp at a pinned tag
@@ -56,10 +67,9 @@ jobs:
         if: matrix.backend == 'vulkan'
         shell: pwsh
         run: |
-          # choco instead of the dedicated action: the action reported success but
-          # CMake still could not find_package(Vulkan), so the SDK was not landing
-          # where the toolchain looks. The chocolatey package installs the official
-          # LunarG SDK and sets VULKAN_SDK.
+          # choco rather than the dedicated action: that action reported success
+          # while CMake still could not find_package(Vulkan), so the SDK was never
+          # landing where the toolchain looks.
           choco install vulkan-sdk -y --no-progress
           if (-not $env:VULKAN_SDK) {
             $env:VULKAN_SDK = (Get-ChildItem 'C:\VulkanSDK' -Directory | Select-Object -Last 1).FullName
@@ -67,22 +77,18 @@ jobs:
           "VULKAN_SDK=$env:VULKAN_SDK" | Out-File -Append $env:GITHUB_ENV
           Write-Host "Vulkan SDK: $env:VULKAN_SDK"
 
-      - name: Use the runner's CUDA toolkit
+      - name: Locate CUDA toolkit
         if: matrix.backend == 'cuda12'
         shell: pwsh
         run: |
-          # Do not install a toolkit. Three attempts at naming a version failed
-          # with "Version not available", and the hosted image already ships CUDA.
-          # Discovering the installed one removes the guess entirely and is also
-          # what a self-hosted runner would need anyway.
           $root = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA'
           $dir = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
                  Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $dir) { throw "no CUDA toolkit on the runner (looked in $root)" }
+          if (-not $dir) {
+            throw "cuda12 needs a CUDA toolkit; none under $root. Run on a CUDA-capable runner."
+          }
           "CUDA_PATH=$($dir.FullName)" | Out-File -Append $env:GITHUB_ENV
-          "$($dir.FullName)\bin"        | Out-File -Append $env:GITHUB_PATH
-          "$($dir.FullName)\bin\libnvvp" | Out-File -Append $env:GITHUB_PATH
-          Write-Host "using $($dir.Name)"
+          "$($dir.FullName)\bin" | Out-File -Append $env:GITHUB_PATH
           nvcc --version
 
       - name: Enter MSVC developer environment
@@ -93,11 +99,10 @@ jobs:
       - name: Configure
         working-directory: src
         run: |
-          # Ninja rather than "Visual Studio 17 2022": the VS generator needs to
-          # discover an installed instance, which failed on the hosted image
-          # ("could not find any instance of Visual Studio"). msvc-dev-cmd puts
-          # cl.exe on PATH and Ninja is preinstalled, so this path is stable and
-          # also faster. Single-config means no --config below.
+          # Ninja instead of the Visual Studio generator: the generator has to
+          # discover an installed instance and failed on the hosted image
+          # ("could not find any instance of Visual Studio"). Ninja is preinstalled
+          # and msvc-dev-cmd puts cl.exe on PATH.
           cmake -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=OFF `
@@ -116,18 +121,17 @@ jobs:
           $stage = "stage/whispercpp-${{ matrix.backend }}-win-x64"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-          # Locate the produced binary rather than assuming one layout: MSVC puts
-          # it in build/bin/Release, Ninja in build/bin.
           $exe = Get-ChildItem -Path src/build -Recurse -Filter whisper-cli.exe |
                  Select-Object -First 1
           if (-not $exe) { throw 'whisper-cli.exe was not produced' }
           Copy-Item $exe.FullName $stage/
+          Get-ChildItem -Path $exe.Directory -Filter *.dll | Copy-Item -Destination $stage -Force
 
-          # Vendor every DLL next to it so the archive is self-contained.
-          Get-ChildItem -Path $exe.Directory -Filter *.dll | Copy-Item -Destination $stage
-          # CUDA builds additionally drop the runtime DLLs here.
-          Get-ChildItem -Path src/build -Recurse -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue |
-            ForEach-Object { Copy-Item $_.FullName $stage -Force }
+          # CUDA builds need their runtime next to the exe.
+          if ('${{ matrix.backend }}' -eq 'cuda12') {
+            Get-ChildItem -Path src/build -Recurse -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue |
+              ForEach-Object { Copy-Item $_.FullName $stage -Force }
+          }
 
           Copy-Item src/LICENSE $stage/LICENSE-whisper.cpp.txt -ErrorAction SilentlyContinue
           @"
@@ -152,10 +156,10 @@ jobs:
         if: matrix.backend != 'cuda12'
         shell: pwsh
         run: |
-          # A CPU/Vulkan archive that carries CUDA DLLs would be silently wrong
-          # for everyone without an NVIDIA driver (ADR-012 cost note).
+          # A CPU/Vulkan archive carrying CUDA DLLs would break for everyone
+          # without an NVIDIA driver (ADR-012 cost note).
           $leak = Get-ChildItem -Recurse -Path stage -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue
-          if ($leak) { throw "CUDA DLLs leaked into the ${{ matrix.backend }} archive: $($leak.Name -join ', ')" }
+          if ($leak) { throw "CUDA DLLs leaked into the ${{ matrix.backend }} archive" }
           Write-Host 'no CUDA DLLs present'
 
       - name: Verify the binary starts
@@ -181,22 +185,18 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-
       - name: Merge measured values
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, glob, pathlib
           out = {}
-          for p in glob.glob('artifacts/*.json'):
-              d = json.load(open(p))
-              out[pathlib.Path(p).stem] = d
+          for p in sorted(glob.glob('artifacts/*.json')):
+              out[pathlib.Path(p).stem] = json.load(open(p))
           pathlib.Path('registry-values.json').write_text(json.dumps(out, indent=2))
           print(json.dumps(out, indent=2))
           PY
-          # Paste this into internal/registry/data/registry.json: size + sha256,
-          # and drop "tbd": true. Never hand-write a checksum.
-
+          # Paste into internal/registry/data/registry.json: size + sha256, drop tbd.
       - uses: actions/upload-artifact@v4
         with:
           name: registry-values
@@ -212,13 +212,11 @@ jobs:
         with:
           path: assets
           merge-multiple: true
-
       - name: Checksums
         run: |
           cd assets
           sha256sum *.zip > SHA256SUMS.txt || true
           cat SHA256SUMS.txt
-
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
