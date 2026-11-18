@@ -67,14 +67,23 @@ jobs:
           "VULKAN_SDK=$env:VULKAN_SDK" | Out-File -Append $env:GITHUB_ENV
           Write-Host "Vulkan SDK: $env:VULKAN_SDK"
 
-      - name: Install CUDA toolkit
+      - name: Use the runner's CUDA toolkit
         if: matrix.backend == 'cuda12'
-        uses: Jimver/cuda-toolkit@v0.2.19
-        with:
-          # 12.6.3 rather than 12.8.0: the toolkit action's version list does not
-          # carry 12.8.0 ("Error: Version not available").
-          cuda: '12.6.3'
-          method: 'network'
+        shell: pwsh
+        run: |
+          # Do not install a toolkit. Three attempts at naming a version failed
+          # with "Version not available", and the hosted image already ships CUDA.
+          # Discovering the installed one removes the guess entirely and is also
+          # what a self-hosted runner would need anyway.
+          $root = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA'
+          $dir = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $dir) { throw "no CUDA toolkit on the runner (looked in $root)" }
+          "CUDA_PATH=$($dir.FullName)" | Out-File -Append $env:GITHUB_ENV
+          "$($dir.FullName)\bin"        | Out-File -Append $env:GITHUB_PATH
+          "$($dir.FullName)\bin\libnvvp" | Out-File -Append $env:GITHUB_PATH
+          Write-Host "using $($dir.Name)"
+          nvcc --version
 
       - name: Enter MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
