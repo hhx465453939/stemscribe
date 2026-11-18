@@ -39,7 +39,10 @@ jobs:
           - backend: vulkan
             cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=ON'
           - backend: cuda12
-            cmake_flags: '-DGGML_CUDA=ON -DGGML_VULKAN=OFF'
+            # -allow-unsupported-compiler is the supported nvcc escape hatch for a
+            # host MSVC newer than the toolkit officially lists. Pinning an older
+            # VS instead would break again on the next runner image update.
+            cmake_flags: '-DGGML_CUDA=ON -DGGML_VULKAN=OFF -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler'
     steps:
       - name: Checkout whisper.cpp at a pinned tag
         uses: actions/checkout@v4
@@ -68,9 +71,9 @@ jobs:
         if: matrix.backend == 'cuda12'
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          # 12.8, not 12.4: nvcc 12.4 rejects the MSVC on the hosted image with
-          # "unsupported Microsoft Visual Studio version". Newer CUDA accepts it.
-          cuda: '12.8.0'
+          # 12.6.3 rather than 12.8.0: the toolkit action's version list does not
+          # carry 12.8.0 ("Error: Version not available").
+          cuda: '12.6.3'
           method: 'network'
 
       - name: Enter MSVC developer environment
