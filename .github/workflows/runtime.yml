@@ -64,10 +64,20 @@ jobs:
           cuda: '12.4.0'
           method: 'network'
 
+      - name: Enter MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure
         working-directory: src
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          # Ninja rather than "Visual Studio 17 2022": the VS generator needs to
+          # discover an installed instance, which failed on the hosted image
+          # ("could not find any instance of Visual Studio"). msvc-dev-cmd puts
+          # cl.exe on PATH and Ninja is preinstalled, so this path is stable and
+          # also faster. Single-config means no --config below.
+          cmake -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=OFF `
             -DWHISPER_BUILD_TESTS=OFF `
@@ -76,7 +86,7 @@ jobs:
 
       - name: Build whisper-cli
         working-directory: src
-        run: cmake --build build --config Release --target whisper-cli -j 4
+        run: cmake --build build -j 4
 
       - name: Stage archive
         shell: pwsh
