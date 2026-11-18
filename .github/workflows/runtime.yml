@@ -2,16 +2,16 @@ name: runtime
 
 # Builds whisper.cpp ourselves instead of trusting a stranger's binary (ADR-013).
 #
-# Three backends, per the owner decision: Vulkan covers AMD/Intel/integrated GPUs
-# with a self-contained archive, CUDA gives NVIDIA its ceiling, CPU always works.
+# Three backends per the owner decision: vulkan for AMD/Intel/integrated GPUs
+# (self-contained archive), cpu as the always-works fallback, cuda12 for the
+# NVIDIA ceiling.
 #
-# The job also emits registry-values.json (measured size + sha256), because a
-# measured value is the only sanctioned way this registry gets a checksum.
+# Emits registry-values.json with the measured size + sha256: a measured value is
+# the only sanctioned way this registry gets a checksum.
 #
-# CUDA is opt-in: the hosted image carries no CUDA toolkit, and four attempts at
-# installing or discovering one proved unreliable. Keeping it in the default
-# matrix would leave this workflow permanently red, which is worse than an
-# explicit gate with a named blocker.
+# cuda12 is a separate, opt-in job. It cannot live in the main matrix because
+# `matrix` is not available in a job-level `if` (that made the whole workflow fail
+# to parse, producing zero jobs), and the hosted image carries no CUDA toolkit.
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ on:
         required: false
         default: ''
       with_cuda:
-        description: 'Also build cuda12 (requires a CUDA-capable runner)'
+        description: 'Also build cuda12 (needs a CUDA-capable runner)'
         type: boolean
         default: false
   push:
@@ -37,9 +37,6 @@ jobs:
   build:
     name: build ${{ matrix.backend }}
     runs-on: windows-latest
-    # Job-level gate: `exit 0` only ends one step, so an unrequested opt-in
-    # variant must skip the whole job or its later steps still run and fail.
-    if: ${{ !(matrix.if_cuda && !inputs.with_cuda) }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,12 +45,6 @@ jobs:
             cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=OFF'
           - backend: vulkan
             cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=ON'
-          - backend: cuda12
-            if_cuda: true
-            # -allow-unsupported-compiler is nvcc's supported escape hatch for a
-            # host MSVC newer than the toolkit lists. Pinning an older VS instead
-            # would break again on the next runner image update.
-            cmake_flags: '-DGGML_CUDA=ON -DGGML_VULKAN=OFF -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler'
     steps:
       - name: Checkout whisper.cpp at a pinned tag
         uses: actions/checkout@v4
@@ -68,8 +59,7 @@ jobs:
         shell: pwsh
         run: |
           # choco rather than the dedicated action: that action reported success
-          # while CMake still could not find_package(Vulkan), so the SDK was never
-          # landing where the toolchain looks.
+          # while CMake still could not find_package(Vulkan).
           choco install vulkan-sdk -y --no-progress
           if (-not $env:VULKAN_SDK) {
             $env:VULKAN_SDK = (Get-ChildItem 'C:\VulkanSDK' -Directory | Select-Object -Last 1).FullName
@@ -77,8 +67,61 @@ jobs:
           "VULKAN_SDK=$env:VULKAN_SDK" | Out-File -Append $env:GITHUB_ENV
           Write-Host "Vulkan SDK: $env:VULKAN_SDK"
 
+      - name: Enter MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        working-directory: src
+        run: |
+          # Ninja instead of the Visual Studio generator: the generator must
+          # discover an installed instance and failed on the hosted image.
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DWHISPER_BUILD_TESTS=OFF `
+            -DWHISPER_BUILD_SERVER=OFF `
+            ${{ matrix.cmake_flags }}
+
+      - name: Build whisper-cli
+        working-directory: src
+        run: cmake --build build -j 4
+
+      - name: Stage and measure
+        shell: pwsh
+        run: ./.github/scripts/stage-runtime.ps1 -Backend '${{ matrix.backend }}' -Version '${{ env.WHISPER_VERSION }}'
+
+      - name: Assert no vendor leakage
+        shell: pwsh
+        run: |
+          # A CPU/Vulkan archive carrying CUDA DLLs would break for everyone
+          # without an NVIDIA driver (ADR-012 cost note).
+          $leak = Get-ChildItem -Recurse -Path stage -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue
+          if ($leak) { throw "CUDA DLLs leaked into the ${{ matrix.backend }} archive" }
+          Write-Host 'no CUDA DLLs present'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whispercpp-${{ matrix.backend }}
+          path: dist/*
+          if-no-files-found: error
+
+  build-cuda:
+    name: build cuda12 (opt-in)
+    # Job-level `if` may only use inputs/ref contexts; matrix is not available here.
+    if: ${{ inputs.with_cuda }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout whisper.cpp at a pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ env.WHISPER_VERSION }}
+          path: src
+          submodules: recursive
+
       - name: Locate CUDA toolkit
-        if: matrix.backend == 'cuda12'
         shell: pwsh
         run: |
           $root = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA'
@@ -99,86 +142,33 @@ jobs:
       - name: Configure
         working-directory: src
         run: |
-          # Ninja instead of the Visual Studio generator: the generator has to
-          # discover an installed instance and failed on the hosted image
-          # ("could not find any instance of Visual Studio"). Ninja is preinstalled
-          # and msvc-dev-cmd puts cl.exe on PATH.
+          # -allow-unsupported-compiler is nvcc's supported escape hatch when the
+          # host MSVC is newer than the toolkit advertises.
           cmake -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=OFF `
             -DWHISPER_BUILD_TESTS=OFF `
             -DWHISPER_BUILD_SERVER=OFF `
-            ${{ matrix.cmake_flags }}
+            -DGGML_CUDA=ON -DGGML_VULKAN=OFF `
+            -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler
 
       - name: Build whisper-cli
         working-directory: src
         run: cmake --build build -j 4
 
-      - name: Stage archive
+      - name: Stage and measure
         shell: pwsh
-        run: |
-          $ver = '${{ env.WHISPER_VERSION }}'.TrimStart('v')
-          $stage = "stage/whispercpp-${{ matrix.backend }}-win-x64"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-
-          $exe = Get-ChildItem -Path src/build -Recurse -Filter whisper-cli.exe |
-                 Select-Object -First 1
-          if (-not $exe) { throw 'whisper-cli.exe was not produced' }
-          Copy-Item $exe.FullName $stage/
-          Get-ChildItem -Path $exe.Directory -Filter *.dll | Copy-Item -Destination $stage -Force
-
-          # CUDA builds need their runtime next to the exe.
-          if ('${{ matrix.backend }}' -eq 'cuda12') {
-            Get-ChildItem -Path src/build -Recurse -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue |
-              ForEach-Object { Copy-Item $_.FullName $stage -Force }
-          }
-
-          Copy-Item src/LICENSE $stage/LICENSE-whisper.cpp.txt -ErrorAction SilentlyContinue
-          @"
-          source: https://github.com/ggml-org/whisper.cpp
-          tag: ${{ env.WHISPER_VERSION }}
-          backend: ${{ matrix.backend }}
-          built_by: .github/workflows/runtime.yml
-          commit: ${{ github.sha }}
-          "@ | Set-Content (Join-Path $stage 'PROVENANCE.txt')
-
-          $zip = "dist/whispercpp-$ver-${{ matrix.backend }}-win-x64.zip"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path $stage -DestinationPath $zip -Force
-
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-          $size = (Get-Item $zip).Length
-          @{ file = (Split-Path $zip -Leaf); size = $size; sha256 = $hash } |
-            ConvertTo-Json -Compress | Set-Content "dist/${{ matrix.backend }}.json"
-          Write-Host "artifact $zip  size=$size  sha256=$hash"
-
-      - name: Assert no vendor leakage
-        if: matrix.backend != 'cuda12'
-        shell: pwsh
-        run: |
-          # A CPU/Vulkan archive carrying CUDA DLLs would break for everyone
-          # without an NVIDIA driver (ADR-012 cost note).
-          $leak = Get-ChildItem -Recurse -Path stage -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue
-          if ($leak) { throw "CUDA DLLs leaked into the ${{ matrix.backend }} archive" }
-          Write-Host 'no CUDA DLLs present'
-
-      - name: Verify the binary starts
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Recurse -Path stage -Filter whisper-cli.exe | Select-Object -First 1
-          & $exe.FullName --help | Select-Object -First 5
-          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) { throw "--help exited $LASTEXITCODE" }
-          Write-Host 'whisper-cli responds'
+        run: ./.github/scripts/stage-runtime.ps1 -Backend 'cuda12' -Version '${{ env.WHISPER_VERSION }}'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: whispercpp-${{ matrix.backend }}
+          name: whispercpp-cuda12
           path: dist/*
           if-no-files-found: error
 
   registry-values:
     name: emit measured registry values
-    needs: build
+    needs: [build, build-cuda]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
