@@ -177,6 +177,10 @@ jobs:
   registry-values:
     name: emit measured registry values
     needs: [build, build-cuda]
+    # A skipped dependency would otherwise skip this too, and then there would be
+    # no measured sha256 at all -- which is exactly the artifact this job exists to
+    # produce. Run as long as the mandatory build succeeded.
+    if: ${{ always() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
