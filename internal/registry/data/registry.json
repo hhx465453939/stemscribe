@@ -17,10 +17,9 @@
       "backend": "cpu",
       "platform": "windows-x64",
       "archive": {
-        "url": "runtimes/whisper/1.9.5/win-x64-cpu.zip",
-        "size": 1,
-        "sha256": null,
-        "tbd": true,
+        "url": "runtime-v1.9.5/whispercpp-1.9.5-cpu-win-x64.zip",
+        "size": 892232,
+        "sha256": "d4a658f47e8cdaeb613e9306ca7e57f401a22471d1f7ee4bf3d841e69e3b0eb8",
         "dest": "whisper-cli-cpu.zip"
       },
       "entrypoint": "whisper-cli.exe",
@@ -37,10 +36,9 @@
       "backend": "vulkan",
       "platform": "windows-x64",
       "archive": {
-        "url": "runtimes/whisper/1.9.5/win-x64-vulkan.zip",
-        "size": 1,
-        "sha256": null,
-        "tbd": true,
+        "url": "runtime-v1.9.5/whispercpp-1.9.5-vulkan-win-x64.zip",
+        "size": 14997989,
+        "sha256": "be16e210fdd51d6b52e41d3b5ff1e91bbe8438ed33d37a1d03d8d3c046a525f1",
         "dest": "whisper-cli-vulkan.zip"
       },
       "entrypoint": "whisper-cli.exe",
