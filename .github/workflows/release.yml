@@ -59,6 +59,16 @@ jobs:
       - name: Go tests
         run: go test ./... -count=1
 
+      - name: Install MSYS2 toolchain (gcc for cgo)
+        # The desktop client embeds WebView2 through cgo, so the release runner needs
+        # a C compiler. path-type inherit puts mingw64/bin on PATH for later steps.
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+
       - name: Embed UI assets
         shell: pwsh
         run: |
@@ -79,18 +89,42 @@ jobs:
           go build -trimpath -ldflags "-s -w -X main.version=$v" -o dist/stemscribe.exe ./cmd/stemscribe
           if (-not (Test-Path dist/stemscribe.exe)) { throw 'binary missing' }
 
+      - name: Build desktop client
+        shell: pwsh
+        run: |
+          # This is the thing a user double-clicks: a native WebView2 window, no
+          # browser, no address bar. Without this step a release would ship only the
+          # CLI and the desktop client would simply not exist in the download.
+          $v = '${{ steps.ver.outputs.version }}'
+          $env:CGO_ENABLED = '1'
+          go build -trimpath -tags 'gui desktop production' `
+            -ldflags "-H windowsgui -s -w -X main.version=$v" `
+            -o dist/Stemscribe.exe ./cmd/stemscribe-gui
+          if (-not (Test-Path dist/Stemscribe.exe)) { throw 'desktop client missing' }
+          Write-Host ("desktop client: {0} MB" -f ([math]::Round((Get-Item dist/Stemscribe.exe).Length/1MB,2)))
+
       - name: Assemble portable zip
         shell: pwsh
         run: |
           $tag = '${{ steps.ver.outputs.tag }}'
           $stage = "stage/Stemscribe-$tag"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          # Stemscribe.exe is the client (UI is embedded in it); stemscribe.exe is the
+          # CLI kept alongside for automation. No separate ui/ folder is needed now.
+          Copy-Item dist/Stemscribe.exe $stage/
           Copy-Item dist/stemscribe.exe $stage/
           Copy-Item README.md, README.zh-CN.md, LICENSE $stage/
-          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'ui') | Out-Null
-          Copy-Item -Recurse frontend/out/* (Join-Path $stage 'ui')
           New-Item -ItemType Directory -Force -Path (Join-Path $stage 'docs') | Out-Null
           Copy-Item docs/*.md (Join-Path $stage 'docs')
+          @"
+          Stemscribe $tag
+
+          Stemscribe.exe   double-click this: native window client (UI embedded)
+          stemscribe.exe   CLI for automation (run / probe / runtime install / model install)
+
+          First launch creates workdir/ next to the exe and keeps models and runtimes
+          inside it. Nothing is written to your user profile.
+          "@ | Set-Content (Join-Path $stage 'START-HERE.txt')
           Compress-Archive -Path $stage -DestinationPath "dist/Stemscribe-$tag-portable.zip" -Force
           Get-ChildItem dist | Format-Table Name, Length
 
@@ -116,11 +150,21 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS.txt
           body: |
-            Scaffold release: CLI binary + static UI export.
+            Windows x64 portable build.
 
-            **Not yet included** (tracked in CHG-0001/CHG-0002):
-            - Wails desktop shell (`setup.exe` installer)
-            - whisper.cpp / separator runtimes and model downloads
+            - **Stemscribe.exe** — double-click this. Native WebView2 window client
+              with the UI embedded; no browser, no address bar, no tabs.
+            - **stemscribe.exe** — CLI for automation.
+
+            The first launch creates `workdir/` next to the executable and keeps
+            models, runtimes and transcripts inside it. Nothing is written to your
+            user profile.
+
+            **Not yet included** (tracked in CHG-0002):
+            - whisper.cpp / ffmpeg runtimes and models are fetched on demand via
+              `stemscribe runtime install` / `stemscribe model install`
+            - the CUDA runtime archive (CI has no CUDA-capable runner yet; the
+              registry marks it tbd and refuses to install unverified bytes)
             - code signing
 
             Verify downloads with the attached `SHA256SUMS.txt`.
