@@ -82,16 +82,25 @@
 | 真语音样本来源 | 不能把版权音频塞进仓库 | Q-3：TTS/合成 + 仅存 hash |
 | AC-11（UI 不可安装态）依赖前端 | 本 CHG 只到后端契约与数据 | 与 CHG-0005 联调时收口 |
 
-## 5. 里程碑状态
+## 5. 里程碑状态（按实收）
 
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
-| M1 运行时自建流水线 | ⬜ 未开始 | 需 SPEC 批准 |
-| M2 registry 实测回填 | ⬜ 未开始 | 依赖 M1 产物 |
-| M3 ffmpeg + demux | ⬜ 未开始 | — |
-| M4 whisper 适配器 | ⬜ 未开始 | 依赖 M2 的真实 sha256 |
-| M5 CLI 接线与降级 | ⬜ 未开始 | 依赖 M4 |
-| M6 真 e2e + 文档 | ⬜ 未开始 | 依赖 M5 |
+| M1 运行时自建流水线 | ✅ cpu + vulkan | run 44232117583：两变体构建成功、`--help` 自检通过、非 CUDA 包断言无 cudart/cublas；cuda12 为 job 级 opt-in（托管 runner 无 CUDA toolkit） |
+| M2 registry 实测回填 | 🟡 cpu/vulkan 已填 | 实测 cpu 892,232 B / `d4a658f4…`、vulkan 14,997,989 B / `be16e210…`；**cuda12 仍 tbd**（无产物，不编造）；同时修正了 URL 与实际资产名不符会 404 的缺陷 |
+| M3 ffmpeg + demux | 🟡 代码与单测完，未真跑 | `ffmpeg.go` + `ToWhisperWAV` 参数有断言；本机无 ffmpeg 二进制，未做真实转码验证 |
+| M4 whisper 适配器 | 🟡 代码与单测完，未真跑 | `whisper.go` 实现 `pipeline.Engine`；进度/JSON 解析 12 个测试绿；尚未用真二进制跑通 |
+| M5 CLI 接线与降级 | ✅ | `wire.go` 与 `probe` 共用后端选择；`install` 命令已实现，tbd 条目拒绝安装（实测）；缺项一次列全 |
+| M6 真 e2e + 文档 | ⬜ 未开始 | 需真实音频 + 已发布运行时 + 模型；HF 与 github.com 本会话多次不可达 |
+
+### 5.1 本 CHG 当前的真实阻塞点
+
+| 阻塞 | 影响 | 解法 |
+|---|---|---|
+| 运行时未发布为 release 资产 | `install` 能下到 404（资产目前只在 Actions artifacts 里） | 打 `runtime-v1.9.5` tag 触发 publish job，或 `gh release create` 后重跑 |
+| cuda12 无产物 | N 卡只能走 vulkan | 在带 CUDA toolkit 的 runner（自建/本地）上以 `with_cuda=true` 跑一次 |
+| 无真实音频与模型 | AC-06/AC-12 无法出证据 | 网络恢复后下 `ggml-tiny`（77 MB）+ 生成 TTS 语音 |
+| ffmpeg 未安装 | AC-05 只能靠注入式单测 | 下载静态构建放入 `runtimes/ffmpeg/<ver>/` |
 
 ## 6. 与既有 CHG 的关系
 
