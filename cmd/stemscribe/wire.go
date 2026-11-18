@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/pipeline"
 	"github.com/hhx465453939/stemscribe/internal/registry"
 	"github.com/hhx465453939/stemscribe/internal/resource"
+	"github.com/hhx465453939/stemscribe/internal/store"
 )
 
 // backendPreference is the order to try once hardware is known.
@@ -67,7 +73,7 @@ func backendFor(locked, workdir string) (registry.Backend, string) {
 // "synthetic" stays available on purpose: it is the test double that lets the
 // pipeline be exercised without a 78 MB model download, and CHG-0001's smoke test
 // depends on it. It is never the default.
-func buildEngine(kind, workdir, modelID, locked string, durationMS int) (pipeline.Engine, string, error) {
+func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bool) (pipeline.Engine, string, error) {
 	if strings.EqualFold(kind, "synthetic") {
 		return newSyntheticEngine(durationMS), "synthetic (test double, does not read audio)", nil
 	}
@@ -78,7 +84,7 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int) (pipelin
 	}
 
 	backend, reason := backendFor(locked, workdir)
-	missing := engine.Diagnose(workdir, reg, backend, modelID)
+	missing := engine.Diagnose(workdir, reg, backend, modelID, demux)
 	if !missing.Empty() {
 		// Surface every gap at once; the caller prints this verbatim.
 		return nil, "", missing.Err()
@@ -104,4 +110,51 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int) (pipelin
 		desc += " · " + reason
 	}
 	return w, desc, nil
+}
+
+// inputNeedsDemux reports whether the file must be converted first.
+//
+// A .wav is passed through untouched: whisper-cli's only requirement is 16 kHz
+// mono 16-bit PCM, and refusing a ready-made wav just because ffmpeg is absent
+// would make the tool unusable on machines that already have the right format.
+func inputNeedsDemux(path string) bool {
+	return !strings.EqualFold(filepath.Ext(path), ".wav")
+}
+
+// prepareAudio guarantees <bundle>/audio/16k.wav exists, which is the path the
+// pipeline hands to the engine.
+func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demux bool) error {
+	dest, err := bundle.Path("audio/16k.wav")
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+
+	if demux {
+		exe, ok := engine.FindFFmpeg(layout.Root)
+		if !ok {
+			return fmt.Errorf("input is %s and needs demuxing, but ffmpeg was not found", strings.ToLower(filepath.Ext(input)))
+		}
+		ff := &engine.FFmpeg{Exe: exe}
+		return ff.ToWhisperWAV(context.Background(), input, dest)
+	}
+
+	// Copy rather than reference: the bundle must stay self-contained so it can be
+	// moved or re-run after the original is gone.
+	src, err := os.Open(input)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+	dst, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return err
+	}
+	return dst.Close()
 }

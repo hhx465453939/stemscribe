@@ -82,10 +82,9 @@
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-tiny.bin",
+          "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
           "size": 77691713,
-          "sha256": null,
-          "tbd": true,
+          "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
           "dest": "ggml-tiny.bin"
         }
       ],
@@ -109,7 +108,7 @@
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-base.bin",
+          "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
           "size": 147951465,
           "sha256": null,
           "tbd": true,
@@ -135,7 +134,7 @@
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-small.bin",
+          "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
           "size": 487601967,
           "sha256": null,
           "tbd": true,
@@ -161,7 +160,7 @@
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-medium.bin",
+          "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
           "size": 1533763059,
           "sha256": null,
           "tbd": true,
@@ -188,7 +187,7 @@
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-large-v3.bin",
+          "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
           "size": 3095033483,
           "sha256": null,
           "tbd": true,

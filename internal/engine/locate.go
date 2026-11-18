@@ -130,7 +130,10 @@ func FindFFmpeg(workdir string) (string, bool) {
 }
 
 // Diagnose reports every missing piece in one pass.
-func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, modelID string) Missing {
+//
+// ffmpeg is only reported when the input actually needs demuxing: demanding it for
+// an already-16k-mono wav is a prerequisite the run does not have.
+func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, modelID string, needsDemux bool) Missing {
 	var m Missing
 
 	if _, ok := FindRuntime(workdir, backend); !ok {
@@ -149,8 +152,10 @@ func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, m
 		m.Models = append(m.Models, modelID)
 	}
 
-	if _, ok := FindFFmpeg(workdir); !ok {
-		m.FFmpeg = true
+	if needsDemux {
+		if _, ok := FindFFmpeg(workdir); !ok {
+			m.FFmpeg = true
+		}
 	}
 	return m
 }
