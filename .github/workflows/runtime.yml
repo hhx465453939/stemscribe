@@ -51,17 +51,26 @@ jobs:
 
       - name: Install Vulkan SDK
         if: matrix.backend == 'vulkan'
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          vulkan_version: '1.3.296.0'
-          install_runtime: true
-          cache: true
+        shell: pwsh
+        run: |
+          # choco instead of the dedicated action: the action reported success but
+          # CMake still could not find_package(Vulkan), so the SDK was not landing
+          # where the toolchain looks. The chocolatey package installs the official
+          # LunarG SDK and sets VULKAN_SDK.
+          choco install vulkan-sdk -y --no-progress
+          if (-not $env:VULKAN_SDK) {
+            $env:VULKAN_SDK = (Get-ChildItem 'C:\VulkanSDK' -Directory | Select-Object -Last 1).FullName
+          }
+          "VULKAN_SDK=$env:VULKAN_SDK" | Out-File -Append $env:GITHUB_ENV
+          Write-Host "Vulkan SDK: $env:VULKAN_SDK"
 
       - name: Install CUDA toolkit
         if: matrix.backend == 'cuda12'
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda: '12.4.0'
+          # 12.8, not 12.4: nvcc 12.4 rejects the MSVC on the hosted image with
+          # "unsupported Microsoft Visual Studio version". Newer CUDA accepts it.
+          cuda: '12.8.0'
           method: 'network'
 
       - name: Enter MSVC developer environment
