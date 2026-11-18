@@ -42,14 +42,18 @@ if (-not $SkipFrontend) {
 
 Write-Host '== embed UI into the binary ==' -ForegroundColor Cyan
 $assets = Join-Path $repo 'internal\webui\assets'
-if (Test-Path $assets) {
+New-Item -ItemType Directory -Force -Path $assets | Out-Null
+# Clear only when we are about to copy a fresh export. Doing it unconditionally
+# meant -SkipFrontend wiped the embedded UI and copied nothing back, so the
+# resulting binary reported "UI assets are missing".
+if (-not $SkipFrontend) {
     Get-ChildItem -LiteralPath $assets -Recurse -File |
         Where-Object { $_.Name -ne 'placeholder.txt' } |
         Remove-Item -Force
-}
-New-Item -ItemType Directory -Force -Path $assets | Out-Null
-if (-not $SkipFrontend) {
     Copy-Item -Path (Join-Path $repo 'frontend\out\*') -Destination $assets -Recurse -Force
+    if (-not (Test-Path (Join-Path $assets 'index.html'))) {
+        throw 'embedded assets are missing index.html after copy'
+    }
 }
 Write-Host '== go: build CLI (pure Go) ==' -ForegroundColor Cyan
 Push-Location $repo

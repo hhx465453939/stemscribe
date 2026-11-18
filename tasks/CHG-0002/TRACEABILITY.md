@@ -152,10 +152,30 @@
 
 | 项 | 状态 | 阻塞 |
 |---|---|---|
-| AC-05 真实 demux | 代码 + 注入式单测绿；未真跑 | 本机无 ffmpeg 二进制 |
+| ~~AC-05 真实 demux~~ | ✅ **已真跑**（见 5.6） | — |
 | AC-04 其余模型 sha256 | `whisper-tiny` 已实测；base/small/medium/large-v3 仍 `tbd` | 未下载即不编造（铁律 2） |
 | cuda12 运行时产物 | 仍 `tbd` | CI 无 CUDA-capable runner；已做 job 级 opt-in |
 | 界面与后端接线 | 窗口已开，但界面仍展示 demo 数据 | 属 CHG-0005（前端），需绑定 `ListTasks`/`ProbeHardware` |
+| ffmpeg 未进 registry | 本地已装可用，但未作为可下载运行时登记 | 需选定固定版本并实测 sha256 后回填 |
+
+### 5.6 第四轮实测：真视频 → 文字（AC-05 关闭）
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 装 ffmpeg | 解包 BtbN 静态构建 → `dist/workdir/runtimes/ffmpeg/master/` | `ffmpeg version N-129046`；`FindFFmpeg` 能扫描到 |
+| 造真视频 | `ffmpeg -f lavfi -i color=black:s=320x240:r=10:d=8 -i tts.wav -shortest -c:v libx264 -c:a aac test.mp4` | `test.mp4` 59 KB（黑底 + 真实语音） |
+| **全链跑视频** | `stemscribe-cli.exe run --input test.mp4 --model whisper-tiny` | `download → probe → demux → transcribe → align → export` 全绿，`segments: 2` |
+| demux 产物合规 | `ffprobe audio/16k.wav` | `codec_name=pcm_s16le sample_rate=16000 channels=1` |
+| 逐字稿来自音轨 | `cat text/transcript.md` | `[00:00:00] The Quick Brown Fox jumps over the lazy dog.` |
+
+### 5.7 第四轮修掉的两个真缺陷
+
+| # | 缺陷 | 怎么暴露的 |
+|---|---|---|
+| 9 | `build.ps1` 无条件清空 `internal/webui/assets`、却只在不跳过前端时拷贝 → `-SkipFrontend` 把内嵌 UI 清空且不恢复，GUI 启动报 `UI assets are missing` | 用了 `-SkipFrontend` 快速构建后跑 GUI |
+| 10 | 大小写陷阱第二次咬人：执行的 `./dist/stemscribe.exe` 在 Windows 上被解析为 `Stemscribe.exe`（GUI），而不是 CLI，报的错风马牛不相及 | 待查“为什么 CLI 会关心 UI 资源”时看清文件名 |
+
+> 第 10 条说明：改掉文件名冲突还不够，**命令行历史与文档里也得用新名字**，否则同一个坑会以“报错信息完全对不上”的形式再出现一次。
 
 ## 6. 与既有 CHG 的关系
 
