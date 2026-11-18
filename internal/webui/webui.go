@@ -27,6 +27,12 @@ import (
 //go:embed all:assets
 var assets embed.FS
 
+// FS exposes the embedded UI rooted so that index.html sits at the root.
+//
+// The native shell (cmd/stemscribe-gui) mounts this straight into WebView2, which
+// keeps a single copy of the UI for both the window and the loopback fallback.
+func FS() (fs.FS, error) { return fs.Sub(assets, "assets") }
+
 // Embedded reports whether real UI files were embedded (as opposed to only the
 // placeholder). Used to tell the user "run scripts/build.ps1" instead of showing
 // a blank page.
