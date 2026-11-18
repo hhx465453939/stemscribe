@@ -49,7 +49,7 @@ func cmdModel(args []string) int {
 
 func installOne(id, kind string, rest []string) int {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	workdir := fs.String("workdir", "", "work directory (default: user profile/Stemscribe)")
+	workdir := fs.String("workdir", "", "work directory (default: workdir next to the executable)")
 	// Parse only what follows the id: os.Args would also swallow the subcommand
 	// and the id itself, which silently disabled --workdir.
 	if err := fs.Parse(rest); err != nil {
@@ -203,12 +203,21 @@ func installModel(layout config.Layout, reg registry.Registry, m registry.Model)
 // fetch downloads and verifies one artifact, reporting progress in place.
 func fetch(url, dest string, size int64, sha string) int {
 	client := &downloader.Client{}
+	// Report at 5% steps. The downloader fires every 512 KB, which on a 1.5 GB
+	// model is thousands of lines -- unusable in a CI log.
+	lastPct := -5
 	res, err := client.Fetch(context.Background(), downloader.Artifact{
 		URL: url, DestPath: dest, Size: size, SHA256: sha,
 	}, func(done, total, bps int64) {
-		if total > 0 {
-			fmt.Printf("\r  %3d%%  %d/%d MB", done*100/total, done>>20, total>>20)
+		if total <= 0 {
+			return
 		}
+		pct := int(done * 100 / total)
+		if pct-lastPct < 5 && pct != 100 {
+			return
+		}
+		lastPct = pct
+		fmt.Printf("  %3d%%  %d/%d MB\n", pct, done>>20, total>>20)
 	})
 	fmt.Println()
 	if err != nil {

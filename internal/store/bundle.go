@@ -41,16 +41,28 @@ var StageOrder = []Stage{
 
 // stageOutputs maps a stage to the bundle-relative files it produces. Used to
 // detect that a user (or a crashed run) left an inconsistent bundle behind.
+//
+// These must match what the stages actually produce. An earlier version listed
+// audio/full.wav for probe and demux, which the real path never writes (audio goes
+// straight to a whisper-ready 16k wav), so every run logged MISSING_OUTPUT and
+// recorded fingerprints for files that did not exist -- which then made the next
+// resume decision re-run stages that were already valid.
 var stageOutputs = map[Stage][]string{
-	StageResolve:    {"meta.json"},
-	StageDownload:   {"source/video.mp4"},
-	StageProbe:      {"audio/full.wav"},
-	StageDemux:      {"audio/full.wav", "audio/16k.wav"},
+	StageResolve:  {"meta.json"},
+	StageDownload: {"source/video.mp4"},
+	// Probe only reads metadata; it writes nothing of its own.
+	StageProbe: nil,
+	// prepareAudio writes this file before the pipeline runs (copy or ffmpeg).
+	StageDemux:      {"audio/16k.wav"},
 	StageSeparate:   {"audio/vocals.wav"},
 	StageTranscribe: {"text/transcript.json"},
 	StageAlign:      {"text/transcript.json"},
 	StagePolish:     {"text/polished.md"},
-	StageExport:     {"text/transcript.srt", "text/transcript.md"},
+	// The CLI owns subtitle/markdown export and writes them after the run; a
+	// failure there aborts the run before meta.json is marked done, so nothing is
+	// silently lost. Declaring outputs here would fingerprint files that do not
+	// exist yet at the moment the stage completes.
+	StageExport: nil,
 }
 
 // Outputs returns the files a stage must leave behind.

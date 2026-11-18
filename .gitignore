@@ -1,5 +1,7 @@
 # —— 运行时与产物（绝不入库）——
 /workdir/
+/dist/workdir/
+**/workdir/
 /libraries/
 /models/
 /runtimes/

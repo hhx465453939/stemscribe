@@ -1,11 +1,16 @@
 # 安全策略
 
-## 报告漏洞
+## 报告问题
 
-请**不要**开公开 issue。用 GitHub 的 [Private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)，
-或邮件至仓库 owner（见 GitHub 个人主页）。
+**普通 bug、疑问、功能建议：请直接开 GitHub issue，不要发私信。**
+这是开源项目的正常协作方式；issue 也是别人遇到同样问题时唯一搜得到的记录。
+少一个 issue，就多一个人重新踩一遍。
 
-请在报告中包含：
+**只有「尚未修复的安全漏洞」才走私下渠道**（GitHub Private vulnerability
+reporting，或邮件至仓库 owner）——判断标准只有一条：**公开后会让别人立刻能利用它**。
+其余一切走公开 issue。
+
+安全报告请包含：
 - 影响版本
 - 复现步骤（最小可复现）
 - 影响面判断（密钥泄漏 / 任意文件写 / 远程代码执行 / 信息泄露）

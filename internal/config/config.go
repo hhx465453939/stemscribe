@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/fsutil"
 )
@@ -103,18 +103,41 @@ func Defaults(workdir string) Settings {
 	}
 }
 
-// DefaultWorkdir returns %USERPROFILE%\Stemscribe on Windows and the XDG data
-// dir elsewhere. The path is intentionally not under %APPDATA%: users are
-// expected to back this directory up wholesale.
+// DefaultWorkdir returns "workdir" next to the executable.
+//
+// Why not the user profile: each model is 0.5-3 GB. Scattering them under
+// %USERPROFILE% makes the install impossible to move, back up or wipe as a unit,
+// and leaves gigabytes behind after uninstall. Next to the exe the whole thing is
+// one portable folder, which is also what the registry promised (PRD F-09).
+//
+// Development note: `go run` puts the binary under the OS temp dir, so an
+// exe-relative default would land in temp. In that case fall back to ./workdir in
+// the current directory, which is the repository during development.
 func DefaultWorkdir() (string, error) {
-	home, err := os.UserHomeDir()
+	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+		return "", fmt.Errorf("locate executable: %w", err)
 	}
-	if runtime.GOOS == "windows" {
-		return filepath.Join(home, "Stemscribe"), nil
+	dir := filepath.Dir(exe)
+
+	if isUnderTempDir(dir) {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return "", fmt.Errorf("locate working directory: %w", cwdErr)
+		}
+		return filepath.Join(cwd, "workdir"), nil
 	}
-	return filepath.Join(home, ".local", "share", "stemscribe"), nil
+	return filepath.Join(dir, "workdir"), nil
+}
+
+// isUnderTempDir reports whether dir sits inside the OS temp directory.
+func isUnderTempDir(dir string) bool {
+	tmp := filepath.Clean(os.TempDir())
+	rel, err := filepath.Rel(tmp, filepath.Clean(dir))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
 }
 
 // Layout maps the fixed sub-directory contract from docs/MODEL-REGISTRY.md §4.

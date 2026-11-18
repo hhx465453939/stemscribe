@@ -27,6 +27,33 @@ Scope: this directory and all subdirectories.
 7. **不许在 CI 里跳过测试换绿**。测试失败就修，不加 `|| true`。
 8. **不许用 WMI 查显存**。`AdapterRAM` 是 32 位字段，12 GB 卡会报 4 GB（本机已实测踩坑）。
 
+## 依赖源与目录（硬约束）
+
+### 模型下载源
+
+- **模型权重只从 `https://hf-mirror.com` 取**。国内直连 `huggingface.co` 基本不可达（本会话多次实测为 `000`），
+  而 `hf-mirror.com` 可用（302 → `cas-bridge.xethub.hf.co` → 200，`Content-Length` 与实测一致）。
+- registry 里模型 `files[].url` **必须是绝对 URL**。写相对路径会被 mirror base 拼成
+  `github.com/.../releases/download/...`，必然 404——这个坑已踩过。
+- 镜像只换「下载源」，**不换校验值**。sha256 仍以官方文件的实测值为准；镜像下的字节与官方一致
+  （`ggml-large-v3.bin` 与 WhisperDesktop 自带副本逐字节相同，可作交叉验证）。
+- 换镜像时，先 `HEAD` 核对 `Content-Length` 与 registry 的 `size` 一致，再 `GET` 算 sha256 回填。
+- **禁止编造 sha256**：未实测就写 `null` + `tbd:true`，UI 与 `install` 都必须拒绝安装。
+
+### 引擎运行时
+
+由本仓库 CI 自建（`.github/workflows/runtime.yml`）并作为 release 资产发布，附 `SHA256SUMS.txt`。
+不使用第三方预编译包（来源不可审计）。
+
+### 工作目录（不许污染系统路径）
+
+- 默认工作目录 = **可执行文件同级的 `workdir/`**。模型、运行时、产物全部落在里面，整个文件夹可搬走。
+- `go run` 时二进制在系统临时目录，此时回退到**当前目录的 `workdir/`**（开发时即仓库内）。
+- **禁止**把 `%USERPROFILE%`、`%TEMP%`、`%APPDATA%` 当作默认落盘位置：模型单个 0.5–3 GB，
+  散落到用户目录会让安装不可搬、不可备份，卸载后还会留下几个 GB。
+- 测试与一次性验证可以用临时目录，但**必须显式传 `--workdir`**，不能靠默认值。
+- `workdir/` 已在 `.gitignore` 中，绝不入库。
+
 ## 变更契约（CHG）流程
 
 **任何代码改动前**必须：

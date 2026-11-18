@@ -20,12 +20,15 @@ import (
 func cmdRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	input := fs.String("input", "", "path to a local media file")
-	workdir := fs.String("workdir", "", "work directory (default: user profile/Stemscribe)")
+	workdir := fs.String("workdir", "", "work directory (default: workdir next to the executable)")
 	title := fs.String("title", "", "display title for the bundle")
 	noSeparate := fs.Bool("no-separate", false, "skip vocal separation")
 	noPolish := fs.Bool("no-polish", false, "skip LLM polishing (default: already skipped)")
 	durationMS := fs.Int("duration-ms", 30000, "synthetic duration used by the smoke engine")
 	engineName := fs.String("engine", "auto", "engine: auto (real whisper.cpp) | synthetic (test double)")
+	// Without this the only way to pick a model is to edit settings.json, which makes
+	// the CLI unusable for trying e.g. an already-installed tiny model.
+	modelFlag := fs.String("model", "", "model id from the registry (default: from settings)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -130,8 +133,13 @@ func cmdRun(args []string) int {
 		fmt.Printf("  resume: %s\n", reason)
 	}
 
-	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, settings.Stages.Whisper,
-		string(settings.Runtime.LockedBackend), *durationMS)
+	demux := inputNeedsDemux(absInput)
+	modelID := *modelFlag
+	if modelID == "" {
+		modelID = settings.Stages.Whisper
+	}
+	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, modelID,
+		string(settings.Runtime.LockedBackend), *durationMS, demux)
 	if engErr != nil {
 		fmt.Fprintln(os.Stderr, engErr)
 		return 1
@@ -145,6 +153,15 @@ func cmdRun(args []string) int {
 			fmt.Println("note: vocal separation is not available yet (CHG-0003); transcribing the original audio")
 			separate = false
 			disabled[store.StageSeparate] = true
+		}
+	}
+
+	// Put a whisper-ready wav where the pipeline looks for it. The synthetic engine
+	// does not read audio at all, so it needs nothing here.
+	if _, isSynth := eng.(*syntheticEngine); !isSynth {
+		if err = prepareAudio(layout, bundle, absInput, demux); err != nil {
+			fmt.Fprintf(os.Stderr, "run: prepare audio: %v\n", err)
+			return 1
 		}
 	}
 
@@ -246,7 +263,7 @@ func writeArtifacts(b *store.Bundle, title string, segs []pipeline.Segment) erro
 // cmdProbe reports hardware and the backend that would be selected.
 func cmdProbe(args []string) int {
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
-	workdir := fs.String("workdir", "", "work directory (default: user profile/Stemscribe)")
+	workdir := fs.String("workdir", "", "work directory (default: workdir next to the executable)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
