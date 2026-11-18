@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -165,8 +166,14 @@ func cmdRun(args []string) int {
 		}
 	}
 
+	// Ctrl+C has to reach the engine. With context.Background the child kept running
+	// after the console process died, holding VRAM until the machine was restarted
+	// (AC-08). whisper-cli is killed through the context in defaultExec.
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopSignals()
+
 	runner := &pipeline.Runner{Engine: eng, Emit: emit}
-	result, err := runner.Run(context.Background(), pipeline.Request{
+	result, err := runner.Run(runCtx, pipeline.Request{
 		Bundle:       bundle,
 		Plan:         plan,
 		VideoID:      videoID,

@@ -3,8 +3,10 @@ package engine
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hhx465453939/stemscribe/internal/pipeline"
 )
@@ -273,6 +275,33 @@ func TestFFmpegDemuxRejectsEmpty(t *testing.T) {
 	}
 	if err := f.ToWhisperWAV(context.Background(), in, filepath.Join(dir, "o.wav")); err == nil {
 		t.Error("empty output must be an error")
+	}
+}
+
+// TestDefaultExecCancelKillsChild covers AC-08 against a real child process:
+// canceling the context must end it promptly instead of leaving an orphan that
+// keeps a GPU allocation after the CLI is gone.
+func TestDefaultExecCancelKillsChild(t *testing.T) {
+	if _, err := exec.LookPath("ping"); err != nil {
+		t.Skip("ping not available on this platform")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+
+	started := time.Now()
+	// ping -n 30 would run for ~29s if the context kill did nothing.
+	_, _, err := defaultExec(ctx, "ping", []string{"-n", "30", "127.0.0.1"}, nil)
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Error("a canceled child must surface an error")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("cancel took %v, want <= 2s (child likely orphaned)", elapsed)
 	}
 }
 
