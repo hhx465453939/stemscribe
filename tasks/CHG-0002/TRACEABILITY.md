@@ -121,6 +121,42 @@
 
 外加一处数据缺陷：registry 的下载 URL 与 CI 实际资产名不一致（会 404），已改为真实资产路径。
 
+### 5.3 第三轮实测（原生客户端 + 真转写 + 目录规范化）
+
+| 项 | 命令 / 产物 | 结果 | 对应 AC |
+|---|---|---|---|
+| 原生窗口客户端 | `CGO_ENABLED=1 go build -tags 'gui desktop production' -H windowsgui -o dist/Stemscribe.exe ./cmd/stemscribe-gui` | 进程 `MainWindowTitle=Stemscribe`、`Responding=True`、**18 个 `msedgewebview2` 子进程** → 内嵌 WebView2 的真窗口，不是外部浏览器 | AC-07 |
+| 发行产物含客户端 | 下载 `Stemscribe-v0.1.0-rc1-portable.zip` 并解开 | **2 个 exe**：`Stemscribe.exe` 11.55 MB + `stemscribe-cli.exe` 8.19 MB | AC-07 |
+| 模型源走 hf-mirror | `stemscribe model install whisper-tiny` | `from https://hf-mirror.com/...` → `verified sha256 be07e048e1e5` → 落在 `dist/workdir/models/whisper/whisper-tiny/` | AC-03、AC-04 |
+| **真转写** | `stemscribe run --input tts.wav --model whisper-tiny` | 阶段全绿、`segments: 2`；逐字稿为音频原话：<br>`[00:00:00] The Quick Brown Fox jumps over the lazy dog.`<br>`[00:00:03] Stemscribe transcripts audio locally on your own graphics card.` | **AC-06、AC-12** |
+| 工作目录不污染系统 | 不带 `--workdir` 运行 `probe` | `workdir : E:\Development\stemscribe\dist\workdir`（exe 同级，项目内） | F-09 |
+| tbd 拒绝安装 | 对未实测条目 `install` | `refusing to install unverified bytes` | F-10 |
+
+### 5.4 第三轮修掉的真缺陷
+
+| # | 缺陷 | 怎么暴露的 |
+|---|---|---|
+| 1 | **Windows 文件名大小写不敏感**：`stemscribe.exe` 与 `Stemscribe.exe` 是同一个文件，桌面构建静默覆盖 CLI，发布包里只剩 1 个 exe | 解开实际 zip 数文件，而不是看构建日志（日志完全“正常”） |
+| 2 | `store.stageOutputs` 声明 probe/demux 产出 `audio/full.wav`，真实路径从未写它 → 每次运行都报 `MISSING_OUTPUT`，且给不存在的文件记指纹，导致下次续跑无谓重跑 | 跑真转写时看到告警，追到 checkpoint 语义 |
+| 3 | `run` 没有 `--model`，装了 tiny 也选不了，只能吃 settings 默认值 | 真跑时被 “missing model: whisper-medium” 拦住 |
+| 4 | 默认工作目录是 `%USERPROFILE%\Stemscribe`，模型会散落到用户目录 | owner 指出：必须落在项目/安装目录内 |
+| 5 | `SECURITY.md` 叫用户“不要开公开 issue” | owner 指出：开源项目就该开 issue，只有未修复漏洞才走私下渠道 |
+| 6 | 后端选择只看硬件能力，不看已安装 → 有 N 卡但只装 cpu 运行时则拒绝运行 | 装完 cpu 运行时后 `probe` 报 cuda12，`run` 找不到 cuda12 |
+| 7 | 提交不完整：改了 `wire.go`/`locate.go` 却没 stage，本地绿而 CI 红 | CI 报 `undefined: inputNeedsDemux` |
+| 8 | 验证方法本身错：改了 `bundle.go` 没重建就重跑，拿旧二进制得出“修了没用” | 自查发现二进制时间戳早于源码 |
+
+> 第 1、7、8 三条都是**“看起来成功了”的失败**：构建日志正常、本地编译通过、重跑有输出。
+> 它们的共同修法是——**去看真实产物（zip 内容、二进制 mtime、CI 结论）**，而不是看流程输出。
+
+### 5.5 仍未完成（不掩饰）
+
+| 项 | 状态 | 阻塞 |
+|---|---|---|
+| AC-05 真实 demux | 代码 + 注入式单测绿；未真跑 | 本机无 ffmpeg 二进制 |
+| AC-04 其余模型 sha256 | `whisper-tiny` 已实测；base/small/medium/large-v3 仍 `tbd` | 未下载即不编造（铁律 2） |
+| cuda12 运行时产物 | 仍 `tbd` | CI 无 CUDA-capable runner；已做 job 级 opt-in |
+| 界面与后端接线 | 窗口已开，但界面仍展示 demo 数据 | 属 CHG-0005（前端），需绑定 `ListTasks`/`ProbeHardware` |
+
 ## 6. 与既有 CHG 的关系
 
 | CHG | 关系 |
