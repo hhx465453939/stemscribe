@@ -117,7 +117,10 @@ type Registry struct {
 
 var (
 	sha256Re   = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	versionRe  = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$`)
+	// Versions are either semver or an upstream build id: ffmpeg publishes
+	// N-129046 rather than a semver, and refusing it would mean either lying about
+	// the version or not shipping ffmpeg at all. Kept bounded so junk still fails.
+	versionRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,31}$`)
 	httpURLRe  = regexp.MustCompile(`^https?://`)
 	relPathRe  = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	platforms  = map[string]bool{"windows-x64": true, "windows-arm64": true, "darwin-arm64": true, "linux-x64": true}
@@ -233,7 +236,7 @@ func validateRuntime(rt Runtime) error {
 		return fmt.Errorf("unknown engine %q", rt.Engine)
 	}
 	if !versionRe.MatchString(rt.Version) {
-		return fmt.Errorf("invalid semver %q", rt.Version)
+		return fmt.Errorf("invalid version %q", rt.Version)
 	}
 	if !backends[rt.Backend] {
 		return fmt.Errorf("unknown backend %q", rt.Backend)

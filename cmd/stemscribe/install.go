@@ -119,6 +119,18 @@ func requireChecksum(id string, sha *string) error {
 	return nil
 }
 
+// runtimeDirName builds the install directory for a runtime.
+//
+// The backend suffix only makes sense when the engine has backends: ffmpeg does
+// not, and "N-129046-none" is a name that shows up directly in the user's work
+// directory, so it should not contain a meaningless word.
+func runtimeDirName(version string, backend registry.Backend) string {
+	if backend == "" || backend == registry.BackendNone {
+		return version
+	}
+	return version + "-" + string(backend)
+}
+
 func installRuntime(layout config.Layout, reg registry.Registry, rt registry.Runtime) int {
 	if err := requireChecksum(rt.ID, rt.Archive.SHA256); err != nil {
 		fmt.Fprintf(os.Stderr, "install: %v\n", err)
@@ -140,8 +152,7 @@ func installRuntime(layout config.Layout, reg registry.Registry, rt registry.Run
 		return code
 	}
 
-	destDir := filepath.Join(layout.Runtimes(), string(rt.Engine),
-		fmt.Sprintf("%s-%s", rt.Version, rt.Backend))
+	destDir := filepath.Join(layout.Runtimes(), string(rt.Engine), runtimeDirName(rt.Version, rt.Backend))
 	if err := unzipInto(tmpZip, destDir); err != nil {
 		fmt.Fprintf(os.Stderr, "install: extract: %v\n", err)
 		return 1

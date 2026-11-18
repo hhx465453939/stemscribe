@@ -71,6 +71,26 @@
         "spdx": "MIT",
         "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
       }
+    },
+    {
+      "id": "ffmpeg-win-x64",
+      "engine": "ffmpeg",
+      "version": "N-129046",
+      "backend": "none",
+      "platform": "windows-x64",
+      "archive": {
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-18-12-39/ffmpeg-N-129046-g3a78197c4c-win64-lgpl-shared.zip",
+        "size": 82947887,
+        "sha256": "2fd92fe6fb754de102c06fbe4918705adb6e914b209c481a318498031affec27",
+        "dest": "ffmpeg-win64.zip"
+      },
+      "entrypoint": "bin/ffmpeg.exe",
+      "vram_overhead_mb": 0,
+      "license": {
+        "spdx": "LGPL-2.1-or-later",
+        "url": "https://ffmpeg.org/legal.html",
+        "note": "Shared LGPL build pinned to an immutable autobuild tag; decoders plus PCM encoding are all demux needs, no GPL encoders involved."
+      }
     }
   ],
   "models": [

@@ -114,9 +114,14 @@ func FindFFmpeg(workdir string) (string, bool) {
 			if !e.IsDir() {
 				continue
 			}
-			p := filepath.Join(base, e.Name(), "ffmpeg.exe")
-			if _, statErr := os.Stat(p); statErr == nil {
-				return p, true
+			// Archives built upstream put the binary under bin/, while a manual
+			// placement usually drops it at the runtime root. Accept both, otherwise a
+			// correctly installed ffmpeg would be reported as missing.
+			for _, rel := range []string{"ffmpeg.exe", filepath.Join("bin", "ffmpeg.exe")} {
+				p := filepath.Join(base, e.Name(), rel)
+				if _, statErr := os.Stat(p); statErr == nil {
+					return p, true
+				}
 			}
 		}
 	}
