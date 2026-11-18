@@ -86,8 +86,11 @@ jobs:
           $v = '${{ steps.ver.outputs.version }}'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $env:CGO_ENABLED = '0'
-          go build -trimpath -ldflags "-s -w -X main.version=$v" -o dist/stemscribe.exe ./cmd/stemscribe
-          if (-not (Test-Path dist/stemscribe.exe)) { throw 'binary missing' }
+          # stemscribe-cli.exe, not stemscribe.exe: Windows is case-insensitive, so
+          # stemscribe.exe and Stemscribe.exe are the same path and the desktop build
+          # would overwrite the CLI (a release once shipped a single exe because of it).
+          go build -trimpath -ldflags "-s -w -X main.version=$v" -o dist/stemscribe-cli.exe ./cmd/stemscribe
+          if (-not (Test-Path dist/stemscribe-cli.exe)) { throw 'cli binary missing' }
 
       - name: Build desktop client
         shell: pwsh
@@ -112,7 +115,7 @@ jobs:
           # Stemscribe.exe is the client (UI is embedded in it); stemscribe.exe is the
           # CLI kept alongside for automation. No separate ui/ folder is needed now.
           Copy-Item dist/Stemscribe.exe $stage/
-          Copy-Item dist/stemscribe.exe $stage/
+          Copy-Item dist/stemscribe-cli.exe $stage/
           Copy-Item README.md, README.zh-CN.md, LICENSE $stage/
           New-Item -ItemType Directory -Force -Path (Join-Path $stage 'docs') | Out-Null
           Copy-Item docs/*.md (Join-Path $stage 'docs')
@@ -120,7 +123,7 @@ jobs:
           Stemscribe $tag
 
           Stemscribe.exe   double-click this: native window client (UI embedded)
-          stemscribe.exe   CLI for automation (run / probe / runtime install / model install)
+          stemscribe-cli.exe   CLI for automation (run / probe / runtime install / model install)
 
           First launch creates workdir/ next to the exe and keeps models and runtimes
           inside it. Nothing is written to your user profile.

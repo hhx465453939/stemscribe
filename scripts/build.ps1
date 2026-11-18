@@ -55,9 +55,12 @@ Write-Host '== go: build CLI (pure Go) ==' -ForegroundColor Cyan
 Push-Location $repo
 try {
     $env:CGO_ENABLED = '0'
+    # Name it stemscribe-cli.exe, not stemscribe.exe: Windows filenames are
+    # case-insensitive, so stemscribe.exe and Stemscribe.exe would be the SAME file
+    # and the second build would silently overwrite the first.
     go build -trimpath `
         -ldflags "-s -w -X main.version=$Version" `
-        -o (Join-Path $dist 'stemscribe.exe') ./cmd/stemscribe
+        -o (Join-Path $dist 'stemscribe-cli.exe') ./cmd/stemscribe
     if ($LASTEXITCODE -ne 0) { throw 'go build (cli) failed' }
 } finally {
     Pop-Location
@@ -81,7 +84,7 @@ if (-not $SkipDesktop) {
     }
 }
 
-$cli = Join-Path $dist 'stemscribe.exe'
+$cli = Join-Path $dist 'stemscribe-cli.exe'
 $sizeMb = [math]::Round((Get-Item $cli).Length / 1MB, 2)
 Write-Host ("`nbuilt {0} ({1} MB)" -f $cli, $sizeMb) -ForegroundColor Green
 
