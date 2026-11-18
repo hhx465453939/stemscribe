@@ -89,7 +89,7 @@ func Defaults(workdir string) Settings {
 		},
 		Stages: StagePrefs{
 			Separate:    true,
-			Whisper:     "whisper-medium-q5_0",
+			Whisper:     "whisper-medium",
 			Polish:      false,
 			RetainRaw:   true,
 			QualityTier: TierBalanced,

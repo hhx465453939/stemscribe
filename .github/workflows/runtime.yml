@@ -1,0 +1,198 @@
+name: runtime
+
+# Builds whisper.cpp ourselves instead of trusting a stranger's binary (ADR-013).
+#
+# Why three variants: Vulkan covers AMD/Intel/integrated GPUs with a
+# self-contained archive, CUDA gives NVIDIA its performance ceiling, CPU is the
+# always-works fallback (ADR-012, owner decision: ship both GPU backends).
+#
+# The job also emits `registry-values.json` — the measured size + sha256 of each
+# archive — so the catalog can be filled with real numbers instead of guesses.
+# That is the only sanctioned way this project's registry gets a checksum.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach assets to (empty = build only)'
+        required: false
+        default: ''
+  push:
+    tags: ['runtime-v*']
+
+permissions:
+  contents: write
+
+env:
+  WHISPER_VERSION: 'v1.9.5'
+
+jobs:
+  build:
+    name: build ${{ matrix.backend }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cpu
+            cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=OFF'
+          - backend: vulkan
+            cmake_flags: '-DGGML_CUDA=OFF -DGGML_VULKAN=ON'
+          - backend: cuda12
+            cmake_flags: '-DGGML_CUDA=ON -DGGML_VULKAN=OFF'
+    steps:
+      - name: Checkout whisper.cpp at a pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ env.WHISPER_VERSION }}
+          path: src
+          submodules: recursive
+
+      - name: Install Vulkan SDK
+        if: matrix.backend == 'vulkan'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: '1.3.296.0'
+          install_runtime: true
+          cache: true
+
+      - name: Install CUDA toolkit
+        if: matrix.backend == 'cuda12'
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.4.0'
+          method: 'network'
+
+      - name: Configure
+        working-directory: src
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DWHISPER_BUILD_TESTS=OFF `
+            -DWHISPER_BUILD_SERVER=OFF `
+            ${{ matrix.cmake_flags }}
+
+      - name: Build whisper-cli
+        working-directory: src
+        run: cmake --build build --config Release --target whisper-cli -j 4
+
+      - name: Stage archive
+        shell: pwsh
+        run: |
+          $ver = '${{ env.WHISPER_VERSION }}'.TrimStart('v')
+          $stage = "stage/whispercpp-${{ matrix.backend }}-win-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          # Locate the produced binary rather than assuming one layout: MSVC puts
+          # it in build/bin/Release, Ninja in build/bin.
+          $exe = Get-ChildItem -Path src/build -Recurse -Filter whisper-cli.exe |
+                 Select-Object -First 1
+          if (-not $exe) { throw 'whisper-cli.exe was not produced' }
+          Copy-Item $exe.FullName $stage/
+
+          # Vendor every DLL next to it so the archive is self-contained.
+          Get-ChildItem -Path $exe.Directory -Filter *.dll | Copy-Item -Destination $stage
+          # CUDA builds additionally drop the runtime DLLs here.
+          Get-ChildItem -Path src/build -Recurse -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName $stage -Force }
+
+          Copy-Item src/LICENSE $stage/LICENSE-whisper.cpp.txt -ErrorAction SilentlyContinue
+          @"
+          source: https://github.com/ggml-org/whisper.cpp
+          tag: ${{ env.WHISPER_VERSION }}
+          backend: ${{ matrix.backend }}
+          built_by: .github/workflows/runtime.yml
+          commit: ${{ github.sha }}
+          "@ | Set-Content (Join-Path $stage 'PROVENANCE.txt')
+
+          $zip = "dist/whispercpp-$ver-${{ matrix.backend }}-win-x64.zip"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path $stage -DestinationPath $zip -Force
+
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          $size = (Get-Item $zip).Length
+          @{ file = (Split-Path $zip -Leaf); size = $size; sha256 = $hash } |
+            ConvertTo-Json -Compress | Set-Content "dist/${{ matrix.backend }}.json"
+          Write-Host "artifact $zip  size=$size  sha256=$hash"
+
+      - name: Assert no vendor leakage
+        if: matrix.backend != 'cuda12'
+        shell: pwsh
+        run: |
+          # A CPU/Vulkan archive that carries CUDA DLLs would be silently wrong
+          # for everyone without an NVIDIA driver (ADR-012 cost note).
+          $leak = Get-ChildItem -Recurse -Path stage -Include cudart64*.dll,cublas*.dll -ErrorAction SilentlyContinue
+          if ($leak) { throw "CUDA DLLs leaked into the ${{ matrix.backend }} archive: $($leak.Name -join ', ')" }
+          Write-Host 'no CUDA DLLs present'
+
+      - name: Verify the binary starts
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Path stage -Filter whisper-cli.exe | Select-Object -First 1
+          & $exe.FullName --help | Select-Object -First 5
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) { throw "--help exited $LASTEXITCODE" }
+          Write-Host 'whisper-cli responds'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whispercpp-${{ matrix.backend }}
+          path: dist/*
+          if-no-files-found: error
+
+  registry-values:
+    name: emit measured registry values
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Merge measured values
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, glob, pathlib
+          out = {}
+          for p in glob.glob('artifacts/*.json'):
+              d = json.load(open(p))
+              out[pathlib.Path(p).stem] = d
+          pathlib.Path('registry-values.json').write_text(json.dumps(out, indent=2))
+          print(json.dumps(out, indent=2))
+          PY
+          # Paste this into internal/registry/data/registry.json: size + sha256,
+          # and drop "tbd": true. Never hand-write a checksum.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: registry-values
+          path: registry-values.json
+
+  publish:
+    name: attach assets to release
+    needs: [build, registry-values]
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd assets
+          sha256sum *.zip > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            assets/*.zip
+            assets/SHA256SUMS.txt
+            assets/registry-values.json
+          fail_on_unmatched_files: false

@@ -8,7 +8,7 @@
 | ID | 标题 | status | 独占范围 | 依赖 |
 |---|---|---|---|---|
 | CHG-0001 | Repository Bootstrap & Architecture Contract | **approved** | `docs/**`、`tasks/**`、根目录文档、`cmd/**`、`internal/{registry,downloader}`、`build/**`、`.github/**` | — |
-| CHG-0002 | Engines & Runtimes | planned | `internal/engine/**`、`internal/resource/**`、`runtimes/**` 清单 | 0001 |
+| CHG-0002 | Engines & Runtimes | **proposed**（SPEC_READY，待 owner 批准） | `internal/engine/**`、`internal/registry/data/registry.json`（whisper+ffmpeg 条目）、`.github/workflows/runtime.yml`、`scripts/runtime-*`、`cmd/stemscribe/cli.go`（引擎接线）。**不包含** `internal/resource/**`（仅接线不改逻辑，算法改动走 CHG-0006）；人声分离已移出到 CHG-0003 | 0001 |
 | CHG-0003 | Pipeline & Store | planned | `internal/pipeline/**`、`internal/store/**` | 0002 |
 | CHG-0004 | LLM Layer | planned | `internal/provider/**`、`internal/vault/**`、`prompts/**` | 0001（可与 0002/0003 并行） |
 | CHG-0005 | Frontend | planned | `frontend/**` | 0003（需 IPC 契约冻结） |

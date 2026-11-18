@@ -25,7 +25,7 @@ func cmdRun(args []string) int {
 	noSeparate := fs.Bool("no-separate", false, "skip vocal separation")
 	noPolish := fs.Bool("no-polish", false, "skip LLM polishing (default: already skipped)")
 	durationMS := fs.Int("duration-ms", 30000, "synthetic duration used by the smoke engine")
-	engineName := fs.String("engine", "synthetic", "engine: synthetic (CHG-0001) ")
+	engineName := fs.String("engine", "auto", "engine: auto (real whisper.cpp) | synthetic (test double)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -61,8 +61,10 @@ func cmdRun(args []string) int {
 		return 1
 	}
 
-	if *engineName != "synthetic" {
-		fmt.Fprintf(os.Stderr, "run: engine %q is not available in this increment (CHG-0002 adds whisper.cpp)\n", *engineName)
+	// "auto" resolves the real engine from the workdir; "synthetic" is the
+	// documented test double that does not read audio.
+	if *engineName != "auto" && *engineName != "synthetic" {
+		fmt.Fprintf(os.Stderr, "run: unknown engine %q (use auto or synthetic)\n", *engineName)
 		return 2
 	}
 
@@ -128,7 +130,25 @@ func cmdRun(args []string) int {
 		fmt.Printf("  resume: %s\n", reason)
 	}
 
-	runner := &pipeline.Runner{Engine: newSyntheticEngine(*durationMS), Emit: emit}
+	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, settings.Stages.Whisper,
+		string(settings.Runtime.LockedBackend), *durationMS)
+	if engErr != nil {
+		fmt.Fprintln(os.Stderr, engErr)
+		return 1
+	}
+	fmt.Printf("engine: %s\n", engDesc)
+
+	// Separation moved to CHG-0003 (ADR-014). Saying so once and continuing keeps an
+	// unavailable optional stage from failing an otherwise fine transcription.
+	if separate {
+		if _, isSynth := eng.(*syntheticEngine); !isSynth {
+			fmt.Println("note: vocal separation is not available yet (CHG-0003); transcribing the original audio")
+			separate = false
+			disabled[store.StageSeparate] = true
+		}
+	}
+
+	runner := &pipeline.Runner{Engine: eng, Emit: emit}
 	result, err := runner.Run(context.Background(), pipeline.Request{
 		Bundle:       bundle,
 		Plan:         plan,

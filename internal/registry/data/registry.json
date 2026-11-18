@@ -6,25 +6,59 @@
       "id": "official",
       "base_url": "https://github.com/hhx465453939/stemscribe/releases/download",
       "priority": 0,
-      "note": "GitHub Release assets. Runtime archives are published from CHG-0002 onward."
-    },
-    {
-      "id": "cn",
-      "base_url": "https://github.com/hhx465453939/stemscribe/releases/download",
-      "priority": 10,
-      "note": "Placeholder for a CN mirror; same assets until a dedicated mirror exists."
+      "note": "Runtime archives are produced by .github/workflows/runtime.yml and attached to our own releases."
     }
   ],
   "runtimes": [
     {
+      "id": "whispercpp-cpu-win-x64",
+      "engine": "whisper",
+      "version": "1.9.5",
+      "backend": "cpu",
+      "platform": "windows-x64",
+      "archive": {
+        "url": "runtimes/whisper/1.9.5/win-x64-cpu.zip",
+        "size": 1,
+        "sha256": null,
+        "tbd": true,
+        "dest": "whisper-cli-cpu.zip"
+      },
+      "entrypoint": "whisper-cli.exe",
+      "vram_overhead_mb": 0,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
+      }
+    },
+    {
+      "id": "whispercpp-vulkan-win-x64",
+      "engine": "whisper",
+      "version": "1.9.5",
+      "backend": "vulkan",
+      "platform": "windows-x64",
+      "archive": {
+        "url": "runtimes/whisper/1.9.5/win-x64-vulkan.zip",
+        "size": 1,
+        "sha256": null,
+        "tbd": true,
+        "dest": "whisper-cli-vulkan.zip"
+      },
+      "entrypoint": "whisper-cli.exe",
+      "vram_overhead_mb": 280,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
+      }
+    },
+    {
       "id": "whispercpp-cuda12-win-x64",
       "engine": "whisper",
-      "version": "1.7.4",
+      "version": "1.9.5",
       "backend": "cuda12",
       "platform": "windows-x64",
       "archive": {
-        "url": "runtimes/whisper/1.7.4/win-x64-cuda12.zip",
-        "size": 48234496,
+        "url": "runtimes/whisper/1.9.5/win-x64-cuda12.zip",
+        "size": 1,
         "sha256": null,
         "tbd": true,
         "dest": "whisper-cli-cuda12.zip"
@@ -39,176 +73,141 @@
         "spdx": "MIT",
         "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
       }
-    },
-    {
-      "id": "whispercpp-vulkan-win-x64",
-      "engine": "whisper",
-      "version": "1.7.4",
-      "backend": "vulkan",
-      "platform": "windows-x64",
-      "archive": {
-        "url": "runtimes/whisper/1.7.4/win-x64-vulkan.zip",
-        "size": 43000000,
-        "sha256": null,
-        "tbd": true,
-        "dest": "whisper-cli-vulkan.zip"
-      },
-      "entrypoint": "whisper-cli.exe",
-      "vram_overhead_mb": 280,
-      "license": {
-        "spdx": "MIT",
-        "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
-      }
-    },
-    {
-      "id": "whispercpp-cpu-win-x64",
-      "engine": "whisper",
-      "version": "1.7.4",
-      "backend": "cpu",
-      "platform": "windows-x64",
-      "archive": {
-        "url": "runtimes/whisper/1.7.4/win-x64-cpu.zip",
-        "size": 21000000,
-        "sha256": null,
-        "tbd": true,
-        "dest": "whisper-cli-cpu.zip"
-      },
-      "entrypoint": "whisper-cli.exe",
-      "vram_overhead_mb": 0,
-      "license": {
-        "spdx": "MIT",
-        "url": "https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE"
-      }
-    },
-    {
-      "id": "ffmpeg-win-x64",
-      "engine": "ffmpeg",
-      "version": "7.1.0",
-      "backend": "none",
-      "platform": "windows-x64",
-      "archive": {
-        "url": "runtimes/ffmpeg/7.1.0/win-x64.zip",
-        "size": 71234567,
-        "sha256": null,
-        "tbd": true,
-        "dest": "ffmpeg-win-x64.zip"
-      },
-      "entrypoint": "ffmpeg.exe",
-      "vram_overhead_mb": 0,
-      "license": {
-        "spdx": "LGPL-2.1-or-later",
-        "url": "https://ffmpeg.org/legal.html",
-        "note": "Distribution chosen at runtime; LGPL build preferred to avoid GPL obligations."
-      }
     }
   ],
   "models": [
     {
-      "id": "whisper-medium-q5_0",
+      "id": "whisper-tiny",
       "family": "whisper",
       "engine": "whisper",
-      "display_name": "Whisper Medium (q5_0)",
+      "display_name": "Whisper Tiny",
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-medium-q5_0.bin",
-          "size": 539000000,
+          "url": "models/whisper/ggml-tiny.bin",
+          "size": 77691713,
           "sha256": null,
           "tbd": true,
-          "dest": "ggml-medium-q5_0.bin"
+          "dest": "ggml-tiny.bin"
         }
       ],
-      "vram_estimate_mb": 2600,
-      "ram_estimate_mb": 1800,
-      "disk_after_install_mb": 540,
-      "quality_tier": "balanced",
-      "quantization": "q5_0",
-      "license": {
-        "spdx": "MIT",
-        "url": "https://github.com/openai/whisper/blob/main/LICENSE"
-      },
-      "source": "https://huggingface.co/ggerganov/whisper.cpp",
-      "notes": "Default tier for 6-8 GB VRAM per PRD onboarding preset."
-    },
-    {
-      "id": "whisper-small-q5_0",
-      "family": "whisper",
-      "engine": "whisper",
-      "display_name": "Whisper Small (q5_0)",
-      "langs": ["multi"],
-      "files": [
-        {
-          "url": "models/whisper/ggml-small-q5_0.bin",
-          "size": 190000000,
-          "sha256": null,
-          "tbd": true,
-          "dest": "ggml-small-q5_0.bin"
-        }
-      ],
-      "vram_estimate_mb": 1200,
-      "ram_estimate_mb": 900,
-      "disk_after_install_mb": 190,
+      "vram_estimate_mb": 700,
+      "ram_estimate_mb": 400,
+      "disk_after_install_mb": 75,
       "quality_tier": "light",
-      "quantization": "q5_0",
+      "quantization": "f16",
       "license": {
         "spdx": "MIT",
         "url": "https://github.com/openai/whisper/blob/main/LICENSE"
       },
       "source": "https://huggingface.co/ggerganov/whisper.cpp",
-      "notes": "Low-VRAM fallback and first downgrade step on OOM."
+      "notes": "Smallest model. Used by CI e2e because it keeps the download under 80 MB."
     },
     {
-      "id": "whisper-large-v3-q5_0",
+      "id": "whisper-base",
       "family": "whisper",
       "engine": "whisper",
-      "display_name": "Whisper Large v3 (q5_0)",
+      "display_name": "Whisper Base",
       "langs": ["multi"],
       "files": [
         {
-          "url": "models/whisper/ggml-large-v3-q5_0.bin",
-          "size": 1080000000,
+          "url": "models/whisper/ggml-base.bin",
+          "size": 147951465,
           "sha256": null,
           "tbd": true,
-          "dest": "ggml-large-v3-q5_0.bin"
+          "dest": "ggml-base.bin"
         }
       ],
-      "vram_estimate_mb": 6200,
-      "ram_estimate_mb": 3400,
-      "disk_after_install_mb": 1080,
-      "quality_tier": "max",
-      "quantization": "q5_0",
+      "vram_estimate_mb": 900,
+      "ram_estimate_mb": 600,
+      "disk_after_install_mb": 142,
+      "quality_tier": "light",
+      "quantization": "f16",
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+      },
+      "source": "https://huggingface.co/ggerganov/whisper.cpp"
+    },
+    {
+      "id": "whisper-small",
+      "family": "whisper",
+      "engine": "whisper",
+      "display_name": "Whisper Small",
+      "langs": ["multi"],
+      "files": [
+        {
+          "url": "models/whisper/ggml-small.bin",
+          "size": 487601967,
+          "sha256": null,
+          "tbd": true,
+          "dest": "ggml-small.bin"
+        }
+      ],
+      "vram_estimate_mb": 1400,
+      "ram_estimate_mb": 900,
+      "disk_after_install_mb": 466,
+      "quality_tier": "light",
+      "quantization": "f16",
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/openai/whisper/blob/main/LICENSE"
+      },
+      "source": "https://huggingface.co/ggerganov/whisper.cpp"
+    },
+    {
+      "id": "whisper-medium",
+      "family": "whisper",
+      "engine": "whisper",
+      "display_name": "Whisper Medium",
+      "langs": ["multi"],
+      "files": [
+        {
+          "url": "models/whisper/ggml-medium.bin",
+          "size": 1533763059,
+          "sha256": null,
+          "tbd": true,
+          "dest": "ggml-medium.bin"
+        }
+      ],
+      "vram_estimate_mb": 3200,
+      "ram_estimate_mb": 2100,
+      "disk_after_install_mb": 1463,
+      "quality_tier": "balanced",
+      "quantization": "f16",
       "license": {
         "spdx": "MIT",
         "url": "https://github.com/openai/whisper/blob/main/LICENSE"
       },
       "source": "https://huggingface.co/ggerganov/whisper.cpp",
-      "notes": "Needs 12 GB class GPU with -ngl 99; measured peak pending CHG-0002."
+      "notes": "Default tier for 8-12 GB GPUs."
     },
     {
-      "id": "uvr-mdx-kim-vocal-2",
-      "family": "separator",
-      "engine": "separator",
-      "display_name": "MDX-Net · Kim Vocal 2",
+      "id": "whisper-large-v3",
+      "family": "whisper",
+      "engine": "whisper",
+      "display_name": "Whisper Large v3",
+      "langs": ["multi"],
       "files": [
         {
-          "url": "models/separators/uvr/Kim_Vocal_2.onnx",
-          "size": 63100000,
+          "url": "models/whisper/ggml-large-v3.bin",
+          "size": 3095033483,
           "sha256": null,
           "tbd": true,
-          "dest": "Kim_Vocal_2.onnx"
+          "dest": "ggml-large-v3.bin"
         }
       ],
-      "vram_estimate_mb": 1500,
-      "ram_estimate_mb": 1200,
-      "disk_after_install_mb": 63,
-      "quality_tier": "balanced",
-      "segment_default_s": 15,
+      "vram_estimate_mb": 6800,
+      "ram_estimate_mb": 3600,
+      "disk_after_install_mb": 2952,
+      "quality_tier": "max",
+      "quantization": "f16",
       "license": {
         "spdx": "MIT",
-        "url": "https://github.com/Anjok07/ultimatevocalremovergui"
+        "url": "https://github.com/openai/whisper/blob/main/LICENSE"
       },
-      "source": "https://github.com/Anjok07/ultimatevocalremovergui",
-      "notes": "Weights are referenced from upstream, never mirrored (MODEL-REGISTRY §6)."
+      "source": "https://huggingface.co/ggerganov/whisper.cpp",
+      "notes": "Needs a 12 GB class GPU. Size cross-checked against a known-good local copy."
     }
   ]
 }

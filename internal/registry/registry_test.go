@@ -104,9 +104,9 @@ func TestFindModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("builtin: %v", err)
 	}
-	m, ok := r.FindModel("whisper-medium-q5_0")
+	m, ok := r.FindModel("whisper-medium")
 	if !ok {
-		t.Fatal("whisper-medium-q5_0 not found")
+		t.Fatal("whisper-medium not found")
 	}
 	if m.VRAMEstimateMB <= 0 {
 		t.Error("vram estimate must be positive for admission control")
