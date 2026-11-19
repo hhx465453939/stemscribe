@@ -78,39 +78,33 @@ export function bridge(): Bridge | null {
 
 export const isShell = (): boolean => bridge() !== null;
 
-const demoTasks: TaskView[] = [
-  {
-    id: "demo-1",
-    titleKey: "demo.interview",
-    stage: "transcribing",
-    current: 128,
-    total: 240,
-    detail: "medium-q5_0 · cuda12",
-  },
-  {
-    id: "demo-2",
-    titleKey: "demo.teardown",
-    stage: "done",
-    current: 96,
-    total: 96,
-    detail: "medium-q5_0 · 4m12s",
-  },
-  {
-    id: "demo-3",
-    titleKey: "demo.failed",
-    stage: "failed",
-    current: 0,
-    total: 0,
-    detail: "DL_403",
-    errorHintKey: "demo.failedHint",
-  },
-];
+interface LibraryItem {
+  id: string;
+  title: string;
+  status: string;
+  segments: number;
+  stages_done: number;
+  stages_total: number;
+  engine: string;
+  engine_version: string;
+}
 
+// No fabricated fallback. When the backend is unreachable the board stays empty and
+// says so; invented rows would make a broken system indistinguishable from a
+// working one, which is exactly the failure this project refuses.
 export async function listTasks(): Promise<TaskView[]> {
-  const b = bridge();
-  if (!b) return demoTasks;
   try {
-    return await b.ListTasks();
+    const res = await fetch("/api/library", { cache: "no-store" });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: LibraryItem[] };
+    return (body.items ?? []).map((it) => ({
+      id: it.id,
+      title: it.title || it.id,
+      stage: (it.status === "done" ? "done" : it.status === "failed" ? "failed" : "queued") as TaskStage,
+      current: it.stages_done,
+      total: it.stages_total,
+      detail: [it.engine, it.engine_version].filter(Boolean).join(" "),
+    }));
   } catch {
     return [];
   }

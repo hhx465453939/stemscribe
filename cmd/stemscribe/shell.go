@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/runctl"
 	"github.com/hhx465453939/stemscribe/internal/webapi"
 	"github.com/hhx465453939/stemscribe/internal/webui"
@@ -40,7 +41,8 @@ func cmdShell(args []string) int {
 	// the same handler -- one implementation, two shells (ADR-022).
 	runctl.Version = version
 	svc := runctl.NewService()
-	handler := webapi.New(svc, webui.Handler())
+	wd, _ := config.DefaultWorkdir()
+	handler := webapi.New(svc, webui.Handler(), wd)
 
 	url, err := webui.ServeHandler(ctx, handler)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/runctl"
 	"github.com/hhx465453939/stemscribe/internal/webapi"
 	"github.com/hhx465453939/stemscribe/internal/webui"
@@ -52,7 +53,8 @@ func main() {
 	// two. Before this, the window had no run path at all: clicking Start did nothing.
 	runctl.Version = version
 	svc := runctl.NewService()
-	handler := webapi.New(svc, http.FileServer(http.FS(ui)))
+	wd, _ := config.DefaultWorkdir()
+	handler := webapi.New(svc, http.FileServer(http.FS(ui)), wd)
 
 	err = wails.Run(&options.App{
 		Title:  "Stemscribe",

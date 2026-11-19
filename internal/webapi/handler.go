@@ -28,7 +28,7 @@ type RunRequest struct {
 
 // New builds the handler. Paths under /api/ are handled here; everything else is
 // delegated to fallback, so a single mux can serve both API and static assets.
-func New(svc *runctl.Service, fallback http.Handler) http.Handler {
+func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -92,6 +92,15 @@ func New(svc *runctl.Service, fallback http.Handler) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, st)
+	})
+
+	mux.HandleFunc("/api/library", func(w http.ResponseWriter, r *http.Request) {
+		items, err := runctl.Library(workdir)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
 
 	mux.HandleFunc("/api/capabilities", func(w http.ResponseWriter, r *http.Request) {
