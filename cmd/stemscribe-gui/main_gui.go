@@ -11,8 +11,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
+	"github.com/hhx465453939/stemscribe/internal/runctl"
+	"github.com/hhx465453939/stemscribe/internal/webapi"
 	"github.com/hhx465453939/stemscribe/internal/webui"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -43,6 +46,14 @@ func main() {
 	}
 
 	app := &App{}
+
+	// The window serves the exact same handler as the loopback shell, so "the button
+	// works in the browser" and "the button works in the window" are one claim, not
+	// two. Before this, the window had no run path at all: clicking Start did nothing.
+	runctl.Version = version
+	svc := runctl.NewService()
+	handler := webapi.New(svc, http.FileServer(http.FS(ui)))
+
 	err = wails.Run(&options.App{
 		Title:  "Stemscribe",
 		Width:  1280,
@@ -50,7 +61,7 @@ func main() {
 		// Matches --bg in globals.css so the frame does not flash white before the
 		// webview paints. A light window around a dark page looks broken.
 		BackgroundColour: &options.RGBA{R: 10, G: 11, B: 13, A: 255},
-		AssetServer:      &assetserver.Options{Assets: ui},
+		AssetServer:      &assetserver.Options{Assets: ui, Handler: handler},
 		OnStartup:        app.startup,
 		Bind:             []any{app},
 		Windows: &windows.Options{

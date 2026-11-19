@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/hhx465453939/stemscribe/internal/runctl"
+	"github.com/hhx465453939/stemscribe/internal/webapi"
 	"github.com/hhx465453939/stemscribe/internal/webui"
 )
 
@@ -34,7 +36,13 @@ func cmdShell(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	url, err := webui.Serve(ctx)
+	// The run API is mounted next to the static UI here, and the native window mounts
+	// the same handler -- one implementation, two shells (ADR-022).
+	runctl.Version = version
+	svc := runctl.NewService()
+	handler := webapi.New(svc, webui.Handler())
+
+	url, err := webui.ServeHandler(ctx, handler)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "shell: %v\n", err)
 		return 1

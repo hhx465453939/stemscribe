@@ -15,6 +15,7 @@
 | CHG-0006 | Scheduling & Agent Integration | planned | `internal/mcpserver/**`、`internal/resource/**`（并发部分） | 0003 |
 | CHG-0007 | Theming & Localization（双主题 + 中英双语） | **approved** | `frontend/app/**`、`frontend/lib/{i18n,api}.ts`、`scripts/{i18n-check.sh,contrast.py}`、`docs/images/app-*`、`README*.md`、`docs/UI-DESIGN.md` §3/§14 | — |
 | CHG-0008 | Runtime Options & Backend Compatibility（参数控制面 + 后端矩阵） | **approved** | `internal/engine/**`、`internal/registry/**`、`internal/resource/**`、`internal/pipeline/**` 与 `internal/store/**`（仅参数快照，跨界已登记）、`cmd/stemscribe/**`、`frontend/app/**`、`scripts/param-defaults-check.ps1`、`docs/{UI-DESIGN,RESOURCE-SCHEDULER,MODEL-REGISTRY}.md` | 0002 |
+| CHG-0010 | Run Control & Live Progress（单击运行 + 实时进度） | **approved** | `internal/runctl/**`、`internal/webapi/**`、`cmd/stemscribe-gui/**`、`cmd/stemscribe/{cli,shell}.go`、`internal/webui/**`（仅加 ServeHandler）、`frontend/app/**`、`frontend/lib/{i18n,api}.ts`、`scripts/build.ps1`、`docs/{ARCHITECTURE,PIPELINE,UI-DESIGN}.md`、`tasks/README.md` | 0008 |
 
 > `planned` 的 CHG 目录尚未创建。开工时复制 `CHG-0001/` 结构并改写内容，然后把 status 从 `draft` 提到 `approved`。
 

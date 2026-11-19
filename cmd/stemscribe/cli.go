@@ -2,23 +2,21 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"time"
 
 	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/pipeline"
 	"github.com/hhx465453939/stemscribe/internal/resource"
+	"github.com/hhx465453939/stemscribe/internal/runctl"
 	"github.com/hhx465453939/stemscribe/internal/store"
 )
 
-// cmdRun executes the pipeline for one local file.
 func cmdRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	input := fs.String("input", "", "path to a local media file")
@@ -28,8 +26,6 @@ func cmdRun(args []string) int {
 	noPolish := fs.Bool("no-polish", false, "skip LLM polishing (default: already skipped)")
 	durationMS := fs.Int("duration-ms", 30000, "synthetic duration used by the smoke engine")
 	engineName := fs.String("engine", "auto", "engine: auto (real whisper.cpp) | synthetic (test double)")
-	// Without this the only way to pick a model is to edit settings.json, which makes
-	// the CLI unusable for trying e.g. an already-installed tiny model.
 	modelFlag := fs.String("model", "", "model id from the registry (default: from settings)")
 
 	// The knobs that matter on the first real use, reachable without the UI (F-10).
@@ -62,84 +58,6 @@ func cmdRun(args []string) int {
 	}
 	_ = *noPolish // polishing requires a provider; it is opt-in and never implicit
 
-	wd := *workdir
-	if wd == "" {
-		if wd, err = config.DefaultWorkdir(); err != nil {
-			fmt.Fprintf(os.Stderr, "run: resolve default workdir: %v\n", err)
-			return 1
-		}
-	}
-	settings, layout, err := loadSettings(wd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: %v\n", err)
-		return 1
-	}
-
-	// "auto" resolves the real engine from the workdir; "synthetic" is the
-	// documented test double that does not read audio.
-	if *engineName != "auto" && *engineName != "synthetic" {
-		fmt.Fprintf(os.Stderr, "run: unknown engine %q (use auto or synthetic)\n", *engineName)
-		return 2
-	}
-
-	videoID, err := syntheticVideoID(absInput)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: derive video id: %v\n", err)
-		return 1
-	}
-	bundleDir := filepath.Join(layout.Libraries(), videoID)
-	bundle, err := store.New(bundleDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: open bundle: %v\n", err)
-		return 1
-	}
-	if err = bundle.Ensure(); err != nil {
-		fmt.Fprintf(os.Stderr, "run: prepare bundle: %v\n", err)
-		return 1
-	}
-
-	runID := time.Now().UTC().Format("20060102T150405Z")
-	runLog, err := os.Create(filepath.Join(bundle.Dir(), "runs", runID+".jsonl"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: create run log: %v\n", err)
-		return 1
-	}
-	defer func() { _ = runLog.Close() }()
-
-	emit := func(ev pipeline.Event) {
-		if ev.TS == "" {
-			ev.TS = time.Now().UTC().Format(time.RFC3339Nano)
-		}
-		raw, marshalErr := json.Marshal(ev)
-		if marshalErr != nil {
-			return
-		}
-		_, _ = runLog.Write(append(raw, '\n'))
-		// Human-readable progress on stdout; machine consumers read the JSONL file.
-		switch ev.Kind {
-		case "stage.start":
-			fmt.Printf("→ %s\n", ev.Stage)
-		case "stage.end":
-			// Honour the OK flag: printing a tick for a failed stage is how a broken
-			// run looks successful and sends the reader hunting in the wrong place.
-			if ev.OK != nil && !*ev.OK {
-				fmt.Printf("✗ %s (%s)\n", ev.Stage, ev.Note)
-			} else {
-				fmt.Printf("✓ %s\n", ev.Stage)
-			}
-		case "stage.warn":
-			fmt.Printf("! %s (%s) %s\n", ev.Stage, ev.Code, ev.Note)
-		case "stage.skip":
-			fmt.Printf("· %s skipped (%s)\n", ev.Stage, ev.Note)
-		}
-	}
-
-	separate := settings.Stages.Separate && !*noSeparate
-	disabled := map[store.Stage]bool{
-		store.StageSeparate: !separate,
-		store.StagePolish:   true,
-	}
-
 	// Start from the engine defaults and apply only what the user asked for. The
 	// zero struct is not a safe baseline: it reads as flash-attention off among
 	// other things, so defaults are the baseline and flags are deltas.
@@ -160,189 +78,61 @@ func cmdRun(args []string) int {
 		params.InitialPrompt = *prompt
 	}
 
-	cp, err := bundle.ReadCheckpoint(videoID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: read checkpoint: %v\n", err)
-		return 1
-	}
-	// The hash the checkpoint records and the hash Plan compares must be the same
-	// value, or the comparison is meaningless. Both come from this one map.
-	//
-	// It must also never be empty: the write path substitutes a fallback for an empty
-	// hash, so an empty value here compared against that fallback on the next run and
-	// reported "parameters changed" for identical settings. A stable sentinel keeps
-	// both sides byte-equal.
-	transcribeHash := params.HashInput()
-	if transcribeHash == "" {
-		transcribeHash = "engine-defaults"
-	}
-	stageParams := map[string]string{"transcribe": transcribeHash}
-
-	demux := inputNeedsDemux(absInput)
-	modelID := *modelFlag
-	if modelID == "" {
-		modelID = settings.Stages.Whisper
-	}
-	engName, engVersion := "synthetic", version
-	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, modelID,
-		string(settings.Runtime.LockedBackend), *durationMS, demux, params)
-	if engErr != nil {
-		fmt.Fprintln(os.Stderr, engErr)
-		return 1
-	}
-	fmt.Printf("engine: %s\n", engDesc)
-	if w, ok := eng.(*engine.Whisper); ok {
-		engName, engVersion = "whisper.cpp", w.Version
-	}
-
-	// Separation moved to CHG-0003 (ADR-014). Saying so once and continuing keeps an
-	// unavailable optional stage from failing an otherwise fine transcription.
-	if separate {
-		if _, isSynth := eng.(*syntheticEngine); !isSynth {
-			fmt.Println("note: vocal separation is not available yet (CHG-0003); transcribing the original audio")
-			separate = false
-			disabled[store.StageSeparate] = true
+	// Everything below is shared with the window and the browser shell: the
+	// orchestration lives in internal/runctl so there is one run path, not three
+	// (ADR-024). This function keeps only what is CLI-specific -- flags, human
+	// readable printing and exit codes.
+	emit := func(ev pipeline.Event) {
+		switch ev.Kind {
+		case "engine":
+			fmt.Printf("engine: %s\n", ev.Note)
+		case "plan.reason":
+			fmt.Printf("  resume: %s\n", ev.Note)
+		case "stage.start":
+			fmt.Printf("→ %s\n", ev.Stage)
+		case "stage.end":
+			// Honour the OK flag: printing a tick for a failed stage is how a broken
+			// run looks successful and sends the reader hunting in the wrong place.
+			if ev.OK != nil && !*ev.OK {
+				fmt.Printf("✗ %s (%s)\n", ev.Stage, ev.Note)
+			} else {
+				fmt.Printf("✓ %s\n", ev.Stage)
+			}
+		case "stage.warn":
+			fmt.Printf("! %s (%s) %s\n", ev.Stage, ev.Code, ev.Note)
+		case "stage.skip":
+			fmt.Printf("· %s skipped (%s)\n", ev.Stage, ev.Note)
 		}
 	}
 
-	// Plan only after every `disabled` decision is final. Computing it earlier meant
-	// the plan still believed separation was enabled, so it resumed at a stage the
-	// runner then skipped -- and the parameter comparison for transcribe was never
-	// reached, which is precisely what AC-04 needs to observe.
-	plan := cp.Plan(bundle.Observe(), stageParams, disabled)
-	for _, reason := range plan.Reasons {
-		fmt.Printf("  resume: %s\n", reason)
-	}
-
-	// Put a whisper-ready wav where the pipeline looks for it. The synthetic engine
-	// does not read audio at all, so it needs nothing here.
-	if _, isSynth := eng.(*syntheticEngine); !isSynth {
-		if err = prepareAudio(layout, bundle, absInput, demux, planSkips(plan, store.StageDemux)); err != nil {
-			fmt.Fprintf(os.Stderr, "run: prepare audio: %v\n", err)
-			return 1
-		}
-	}
-
-	// Ctrl+C has to reach the engine. With context.Background the child kept running
-	// after the console process died, holding VRAM until the machine was restarted
-	// (AC-08). whisper-cli is killed through the context in defaultExec.
+	// Ctrl+C has to reach the engine. With a background context the child kept
+	// running after the console process died, holding VRAM until reboot.
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopSignals()
 
-	runner := &pipeline.Runner{Engine: eng, Emit: emit}
-	result, err := runner.Run(runCtx, pipeline.Request{
-		Bundle:       bundle,
-		Plan:         plan,
-		Params:       stageParams,
-		VideoID:      videoID,
-		Separate:     separate,
-		Transcribe:   pipeline.TranscribeOptions{Model: modelID, VAD: *vad},
-		SeparateOpts: pipeline.SeparateOptions{SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
+	runctl.Version = version
+	out, err := runctl.Run(runCtx, runctl.Options{
+		Input:      absInput,
+		Title:      *title,
+		Workdir:    *workdir,
+		ModelID:    *modelFlag,
+		Engine:     *engineName,
+		DurationMS: *durationMS,
+		Params:     params,
+		Separate:   !*noSeparate,
+		Emit:       emit,
 	})
 	if err != nil {
-		meta := buildMeta(videoID, *title, absInput, "failed", engName, engVersion, params)
-		meta.Stages[string(result.FailedAt)] = store.StageRun{State: "failed", Message: err.Error()}
-		_ = bundle.WriteMeta(meta)
-		fmt.Fprintf(os.Stderr, "run: failed at %s: %v\n", result.FailedAt, err)
+		fmt.Fprintf(os.Stderr, "run: %v\n", err)
 		return 1
 	}
 
-	segs, err := pipeline.ReadTranscript(filepath.Join(bundle.Dir(), "text", "transcript.json"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: read transcript: %v\n", err)
-		return 1
-	}
-	if err = writeArtifacts(bundle, *title, segs); err != nil {
-		fmt.Fprintf(os.Stderr, "run: export: %v\n", err)
-		return 1
-	}
-
-	meta := buildMeta(videoID, *title, absInput, "done", engName, engVersion, params)
-	for _, s := range result.Completed {
-		meta.Stages[string(s)] = store.StageRun{State: "ok"}
-	}
-	if err = bundle.WriteMeta(meta); err != nil {
-		fmt.Fprintf(os.Stderr, "run: write meta: %v\n", err)
-		return 1
-	}
-
-	fmt.Printf("\nbundle: %s\nsegments: %d\n", bundle.Dir(), len(segs))
+	fmt.Printf("\nbundle: %s\nsegments: %d\n", out.BundleDir, out.Segments)
 	return 0
 }
 
 func loadSettings(wd string) (config.Settings, config.Layout, error) {
-	layout, err := config.NewLayout(wd)
-	if err != nil {
-		return config.Settings{}, config.Layout{}, err
-	}
-	if err = layout.Ensure(); err != nil {
-		return config.Settings{}, config.Layout{}, err
-	}
-	settings, err := layout.Load()
-	if err != nil {
-		return config.Settings{}, config.Layout{}, err
-	}
-	return settings, layout, nil
-}
-
-// planSkips reports whether the plan considers a stage already valid. The caller
-// needs this before the pipeline starts: prepareAudio must not touch a file the
-// checkpoint has already validated, because doing so invalidates its fingerprint.
-func planSkips(p store.Plan, s store.Stage) bool {
-	for _, skip := range p.Skip {
-		if skip == s {
-			return true
-		}
-	}
-	return false
-}
-
-func buildMeta(videoID, title, inputPath, status, engName, engVersion string, params engine.WhisperParams) store.Meta {
-	if title == "" {
-		title = filepath.Base(inputPath)
-	}
-	hash := params.HashInput()
-	if hash == "" {
-		hash = "engine-defaults"
-	}
-	return store.Meta{
-		VideoID: videoID,
-		Title:   title,
-		Status:  status,
-		Source:  store.Source{Kind: "file", Origin: "local"},
-		Stages:  map[string]store.StageRun{},
-		Provenance: store.Provenance{
-			// Previously this was hardcoded to "synthetic", so a real whisper.cpp run
-			// recorded a false engine in its own metadata. Provenance that lies is
-			// worse than no provenance, because it is trusted.
-			Engines: map[string]store.EngineInfo{
-				"transcribe": {Name: engName, Version: engVersion},
-			},
-			ParamsSnapshotHash: store.HashParams(hash),
-			ParamsSnapshot:     params.Snapshot(),
-		},
-	}
-}
-
-func writeArtifacts(b *store.Bundle, title string, segs []pipeline.Segment) error {
-	if title == "" {
-		title = b.Dir()
-	}
-	files := map[string]string{
-		"text/transcript.srt": pipeline.ToSRT(segs),
-		"text/transcript.vtt": pipeline.ToVTT(segs),
-		"text/transcript.md":  pipeline.ToMarkdown(title, segs),
-	}
-	for rel, content := range files {
-		full, err := b.Path(rel)
-		if err != nil {
-			return err
-		}
-		if err = os.WriteFile(full, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", rel, err)
-		}
-	}
-	return nil
+	return runctl.LoadSettings(wd)
 }
 
 // cmdProbe reports hardware and the backend that would be selected.
@@ -407,11 +197,9 @@ func cmdProbe(args []string) int {
 // syntheticVideoID derives a stable id from path + size so re-running the same
 // file updates one bundle instead of creating duplicates (ADR-006).
 func syntheticVideoID(inputPath string) (string, error) {
-	info, err := os.Stat(inputPath)
-	if err != nil {
-		return "", err
-	}
-	return "local-" + store.HashParams(inputPath, fmt.Sprint(info.Size()))[4:], nil
+	return runctl.VideoID(inputPath)
 }
 
 var errNotImplemented = errors.New("not implemented")
+
+var _ = store.HashParams

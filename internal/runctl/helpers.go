@@ -1,4 +1,4 @@
-package main
+package runctl
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"github.com/hhx465453939/stemscribe/internal/store"
 )
 
-// backendPreference is the order to try once hardware is known.
-func backendPreference(preferred registry.Backend) []registry.Backend {
+// BackendPreference is the order to try once hardware is known.
+func BackendPreference(preferred registry.Backend) []registry.Backend {
 	switch preferred {
 	case registry.BackendCUDA12:
 		return []registry.Backend{registry.BackendCUDA12, registry.BackendVulkan, registry.BackendCPU}
@@ -28,14 +28,13 @@ func backendPreference(preferred registry.Backend) []registry.Backend {
 	}
 }
 
-// backendFor picks the backend that will actually be used.
+// BackendFor picks the backend that will actually be used.
 //
 // Hardware capability alone is not enough: a machine with an NVIDIA GPU but only
-// the cpu runtime installed must still run, otherwise "install the cpu runtime"
-// is a dead end on exactly the machines most likely to try it. The installed set
-// is therefore consulted, and any fallback is named in the reason so the UI can
-// show why the GPU is idle.
-func backendFor(locked, workdir string) (registry.Backend, string) {
+// the cpu runtime installed must still run. The installed set is therefore
+// consulted, and any fallback is named in the reason so the UI can show why the
+// GPU is idle (ADR-004: no silent downgrade).
+func BackendFor(locked, workdir string) (registry.Backend, string) {
 	probe := resource.NewProbe()
 	hw := resource.Hardware{}
 	if total, err := probe.TotalMB(); err == nil && total > 0 {
@@ -57,7 +56,7 @@ func backendFor(locked, workdir string) (registry.Backend, string) {
 		preferred = registry.BackendCPU
 	}
 
-	for _, candidate := range backendPreference(preferred) {
+	for _, candidate := range BackendPreference(preferred) {
 		if _, ok := engine.FindRuntime(workdir, candidate); ok {
 			if candidate == preferred {
 				return candidate, sel.Reason
@@ -68,14 +67,14 @@ func backendFor(locked, workdir string) (registry.Backend, string) {
 	return preferred, sel.Reason + "; no runtime installed yet"
 }
 
-// buildEngine assembles the pipeline engine.
+// BuildEngine assembles the pipeline engine.
 //
-// "synthetic" stays available on purpose: it is the test double that lets the
-// pipeline be exercised without a 78 MB model download, and CHG-0001's smoke test
-// depends on it. It is never the default.
-func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bool, params engine.WhisperParams) (pipeline.Engine, string, error) {
+// "synthetic" stays available on purpose: it is the test double that exercises the
+// pipeline without a model download, and the smoke test depends on it. It is never
+// the default.
+func BuildEngine(kind, workdir, modelID, locked string, durationMS int, demux bool, params engine.WhisperParams) (pipeline.Engine, string, error) {
 	if strings.EqualFold(kind, "synthetic") {
-		return newSyntheticEngine(durationMS), "synthetic (test double, does not read audio)", nil
+		return NewSyntheticEngine(durationMS), "synthetic (test double, does not read audio)", nil
 	}
 
 	reg, err := registry.Builtin()
@@ -83,10 +82,9 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bo
 		return nil, "", fmt.Errorf("load registry: %w", err)
 	}
 
-	backend, reason := backendFor(locked, workdir)
+	backend, reason := BackendFor(locked, workdir)
 	missing := engine.Diagnose(workdir, reg, backend, modelID, demux)
 	if !missing.Empty() {
-		// Surface every gap at once; the caller prints this verbatim.
 		return nil, "", missing.Err()
 	}
 
@@ -99,10 +97,8 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bo
 		return nil, "", fmt.Errorf("model %s vanished after diagnosis", modelID)
 	}
 
-	// Validate before spending a single second on audio. The guards exist so a
-	// conflicting combination surfaces as an actionable message; skipping them let
-	// a VAD-without-model request reach whisper-cli and come back as an opaque
-	// exit 10 with no hint at all.
+	// Validate before spending a second on audio. Skipping these guards let a
+	// VAD-without-model request reach whisper-cli and come back as an opaque exit 10.
 	if regModel, found := reg.FindModel(modelID); found {
 		if err := params.Validate(regModel); err != nil {
 			return nil, "", err
@@ -116,45 +112,33 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bo
 		Version:   rt.Version,
 		Params:    params,
 	}
-	// Persist the engine's own output. Failures like a bare exit code are
-	// undiagnosable without it, and a user reporting a bug needs something to
-	// attach. Best effort: a missing log must never block the run.
+	// Persist the engine's own output: a bare exit code is undiagnosable, and a bug
+	// report needs something to attach. Best effort — never blocks a run.
 	logPath := filepath.Join(workdir, "logs", "engine.log")
 	if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o755); mkErr == nil {
 		if f, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); logErr == nil {
 			w.Log = f
 		}
 	}
-	desc := fmt.Sprintf("%s %s (%s)", "whisper.cpp", rt.Version, backend)
+	desc := fmt.Sprintf("whisper.cpp %s (%s)", rt.Version, backend)
 	if reason != "" {
 		desc += " · " + reason
 	}
 	return w, desc, nil
 }
 
-// inputNeedsDemux reports whether the file must be converted first.
-//
-// A .wav is passed through untouched: whisper-cli's only requirement is 16 kHz
-// mono 16-bit PCM, and refusing a ready-made wav just because ffmpeg is absent
-// would make the tool unusable on machines that already have the right format.
-func inputNeedsDemux(path string) bool {
-	return !strings.EqualFold(filepath.Ext(path), ".wav")
-}
-
-// prepareAudio guarantees <bundle>/audio/16k.wav exists, which is the path the
+// PrepareAudio guarantees <bundle>/audio/16k.wav exists, which is the path the
 // pipeline hands to the engine.
-func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demux, reuse bool) error {
+//
+// reuse must be true when the checkpoint already validated this file: rewriting it
+// refreshes the mtime, and demux records (size, mod_time) as its fingerprint, so
+// the next run would report "16k.wav modified" forever.
+func PrepareAudio(ctx context.Context, layout config.Layout, bundle *store.Bundle, input string, demux, reuse bool) error {
 	dest, err := bundle.Path("audio/16k.wav")
 	if err != nil {
 		return err
 	}
 	if reuse {
-		// The checkpoint already proved this file is the demux output. Rewriting it
-		// would refresh its mtime, and because demux records (size, mod_time) as its
-		// fingerprint, the very next run would report "16k.wav modified" forever --
-		// demux could never be reused, and every downstream stage re-ran with it.
-		// That masked the parameter comparison entirely: Plan returns at the first
-		// invalidated stage, so a changed beam size was reported as a demux problem.
 		if st, statErr := os.Stat(dest); statErr == nil && st.Size() > 0 {
 			return nil
 		}
@@ -169,7 +153,7 @@ func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demu
 			return fmt.Errorf("input is %s and needs demuxing, but ffmpeg was not found", strings.ToLower(filepath.Ext(input)))
 		}
 		ff := &engine.FFmpeg{Exe: exe}
-		return ff.ToWhisperWAV(context.Background(), input, dest)
+		return ff.ToWhisperWAV(ctx, input, dest)
 	}
 
 	// Copy rather than reference: the bundle must stay self-contained so it can be
@@ -188,4 +172,53 @@ func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demu
 		return err
 	}
 	return dst.Close()
+}
+
+// BuildMeta assembles the bundle metadata, including a truthful provenance record.
+func BuildMeta(videoID, title, inputPath, status, engName, engVersion string, params engine.WhisperParams) store.Meta {
+	if title == "" {
+		title = filepath.Base(inputPath)
+	}
+	hash := params.HashInput()
+	if hash == "" {
+		hash = "engine-defaults"
+	}
+	return store.Meta{
+		VideoID: videoID,
+		Title:   title,
+		Status:  status,
+		Source:  store.Source{Kind: "file", Origin: "local"},
+		Stages:  map[string]store.StageRun{},
+		Provenance: store.Provenance{
+			// A real whisper.cpp run used to record "synthetic" here. Provenance that
+			// lies is worse than none, because it is trusted.
+			Engines: map[string]store.EngineInfo{
+				"transcribe": {Name: engName, Version: engVersion},
+			},
+			ParamsSnapshotHash: store.HashParams(hash),
+			ParamsSnapshot:     params.Snapshot(),
+		},
+	}
+}
+
+// WriteArtifacts writes the human-facing exports next to the transcript.
+func WriteArtifacts(b *store.Bundle, title string, segs []pipeline.Segment) error {
+	if title == "" {
+		title = b.Dir()
+	}
+	files := map[string]string{
+		"text/transcript.srt": pipeline.ToSRT(segs),
+		"text/transcript.vtt": pipeline.ToVTT(segs),
+		"text/transcript.md":  pipeline.ToMarkdown(title, segs),
+	}
+	for rel, content := range files {
+		full, err := b.Path(rel)
+		if err != nil {
+			return err
+		}
+		if err = os.WriteFile(full, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", rel, err)
+		}
+	}
+	return nil
 }

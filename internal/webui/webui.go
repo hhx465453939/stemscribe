@@ -64,13 +64,20 @@ func Handler() http.Handler {
 // authentication, so exposing it to the LAN would be a vulnerability, not a
 // feature.
 func Serve(ctx context.Context) (string, error) {
+	return ServeHandler(ctx, Handler())
+}
+
+// ServeHandler serves a caller-supplied handler, which is how the run API is
+// mounted next to the static UI. The native window mounts the same value into
+// Wails' AssetServer instead, so both shells exercise one implementation.
+func ServeHandler(ctx context.Context, h http.Handler) (string, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("listen on loopback: %w", err)
 	}
 
 	srv := &http.Server{
-		Handler:           Handler(),
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
