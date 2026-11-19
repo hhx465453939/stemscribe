@@ -131,7 +131,6 @@ func Defaults() WhisperParams {
 		Threads:       4,
 		Processors:    1,
 		FlashAttn:     true,
-		OutJSON:       true,
 	}
 }
 
@@ -211,7 +210,7 @@ func Specs() []ParamSpec {
 		{Key: "out_srt", Flag: "-osrt", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write SubRip subtitles."},
 		{Key: "out_vtt", Flag: "-ovtt", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write WebVTT subtitles."},
 		{Key: "out_txt", Flag: "-otxt", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write plain text."},
-		{Key: "out_json", Flag: "-oj", Group: GroupOutput, Kind: KindBool, Def: true, Help: "Write JSON; the pipeline requires it."},
+		{Key: "out_json", Flag: "-oj", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write JSON. The adapter always requests this; the binary's own default is off."},
 		{Key: "out_json_full", Flag: "-ojf", Group: GroupOutput, Kind: KindBool, Def: false, Help: "JSON with extra detail."},
 		{Key: "out_lrc", Flag: "-olrc", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write LRC lyrics."},
 		{Key: "out_csv", Flag: "-ocsv", Group: GroupOutput, Kind: KindBool, Def: false, Help: "Write CSV."},
@@ -584,6 +583,9 @@ func (p WhisperParams) valueByKey(key string) (string, bool) {
 	case "out_txt":
 		return b(p.OutTXT), true
 	case "out_json":
+		// The mapping must stay even though Args() does not use it: AC-01 requires every
+		// spec to map to a real field. Emission is unconditional in Args(), so this is
+		// read only by Snapshot() and by the coverage test.
 		return b(p.OutJSON), true
 	case "out_json_full":
 		return b(p.OutJSONFull), true

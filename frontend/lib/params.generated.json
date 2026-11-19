@@ -362,10 +362,10 @@
       "flag": "-oj",
       "group": "output",
       "kind": "bool",
-      "def": true,
+      "def": false,
       "min": 0,
       "max": 0,
-      "help": "Write JSON; the pipeline requires it."
+      "help": "Write JSON. The adapter always requests this; the binary's own default is off."
     },
     {
       "key": "out_json_full",
