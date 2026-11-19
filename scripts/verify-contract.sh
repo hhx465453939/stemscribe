@@ -59,6 +59,23 @@ for f in docs/schema/*.json; do
   fi
 done
 
+if [ -n "$PY" ]; then
+  if "$PY" scripts/schema-check.py; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+      say "skip instance validation (jsonschema not installed)"
+    else
+      err "registry.json does not conform to its schema"
+    fi
+  fi
+else
+  say "skip instance validation (no python interpreter available)"
+fi
+
+# The closure that matters: until this ran, registry.json could violate its own
+# contract forever, because only the schema file itself was ever parsed.
 if [ "$fail" -ne 0 ]; then
   say ""
   say "contract check FAILED"

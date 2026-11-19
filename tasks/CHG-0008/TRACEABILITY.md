@@ -92,7 +92,7 @@
 | M4 后端矩阵 | ✅ | AMD/Intel → vulkan；DirectML 永不选用并给出原因；`TestSelectBackendAMD/Intel/NoVulkanLoader/NoGPU` 全绿 |
 | M5 参数快照 | ✅ | `meta.json.provenance` 实测：`engines` 为 whisper.cpp/1.9.5（不再是 synthetic）、`params_snapshot: {beam_size:1}`、独立 hash |
 | M6 UI 参数面板 | ✅ | `/params` 路由 9.37 kB；截图 `docs/images/app-params-dark.png`；`i18n-check` 108 键双向对齐、零硬编码 |
-| M7 文档同步 | ⬜ 本轮做 | — |
+| M7 文档同步 | ✅ | `UI-DESIGN §7` 增运行参数页；`RESOURCE-SCHEDULER §5` 降级链改为 `cuda12 → vulkan → cpu` 并声明 DirectML 不在链上（与 ADR-018 对齐，原文含 directml 属文档撒谎）；`MODEL-REGISTRY §2.1` 增 `stems` 字段语义与陷阱 |
 
 ## 6. 本轮修掉的真缺陷（续 5.4 计数）
 

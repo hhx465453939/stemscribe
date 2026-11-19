@@ -83,6 +83,7 @@
 | `disk_after_install_mb` | 安装后占用（含解压） | 预检用这个，不是 `size` |
 | `quality_tier` | `light` / `balanced` / `max` | 对应首次向导三档，不是质量评分 |
 | `license.spdx` | 权重许可 | UVR 系权重许可各异，registry 不做镜像分发，只指官方源 |
+| `stems` | 该模型**实际能输出**的分轨 | 能力在**模型上**，不是全局开关（ADR-019）：MDX-Net / VR 是 2 轨（`vocals`+`instrumental`），Demucs 是 4 轨（`drums`/`bass`/`other`/`vocals`）。校验强制 separator 族必须声明 ≥2 轨且含 `vocals`——否则 UI 无法判断该提供几路输出，猜错会静默丢掉模型已经产出的音轨 |
 
 ## 3. 下载与安装流程
 

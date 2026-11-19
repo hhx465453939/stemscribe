@@ -42,6 +42,13 @@ jobs:
             python3 -c "import json,sys; json.load(open(sys.argv[1],encoding='utf-8'))" "$f"
             echo "ok $f"
           done
+      - name: Registry instances conform to their schema
+        # Parsing the schema proves nothing about the data it governs. Without this
+        # step registry.json was free to violate its own contract, and did.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet jsonschema
+          python3 scripts/schema-check.py
       - name: Redaction scan (no real hosts, paths or credentials)
         run: bash scripts/redact-scan.sh
 

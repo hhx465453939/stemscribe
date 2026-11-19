@@ -82,13 +82,17 @@ on_need(required):
 ## 5. 降级链（每级都必须可解释）
 
 ```
-cuda12 → vulkan → directml → cpu
+cuda12 → vulkan → cpu
 ```
+
+> **`directml` 不在链上（ADR-018）。** whisper.cpp 没有 DirectML 后端，列进降级链等于向用户承诺一条并不存在的路。AMD/Intel 由 Vulkan 承接（自包含、不依赖厂商运行时），NVIDIA 走 CUDA 取上限，CPU 永远可跑。任何一级下降都必须带原因串并写进事件日志（ADR-004）。
 
 **降级触发条件**
 | 触发 | 动作 | 记录 |
 |---|---|---|
 | CUDA 初始化失败（驱动/运行时缺失/版本不符） | 落 vulkan | `HW_CUDA_UNAVAILABLE` + 原始错误串 |
+| 无 NVIDIA 但检测到 AMD/Intel | 直接选 vulkan（不试 cuda） | `HW_VENDOR_AMD` / `HW_VENDOR_INTEL` |
+| 无可用 GPU，或 vulkan loader 缺失 | 落 cpu | `HW_NO_GPU` / `HW_VULKAN_UNAVAILABLE` |
 | CUDA OOM（即使降到最小模型仍 OOM） | 落下一后端 | `ENGINE_OOM` + `required/free` 数值 |
 | 引擎崩溃 2 次 | 落下一后端 | `ENGINE_CRASH` |
 | 用户手动锁定后端 | 不降级，直接报错 | 尊重用户（高级模式） |
