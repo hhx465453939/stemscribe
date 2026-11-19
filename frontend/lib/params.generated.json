@@ -1,0 +1,401 @@
+{
+  "groups": [
+    "language",
+    "quality",
+    "segmentation",
+    "threshold",
+    "vad",
+    "backend",
+    "advanced",
+    "output"
+  ],
+  "specs": [
+    {
+      "key": "input_language",
+      "flag": "-l",
+      "group": "language",
+      "kind": "enum",
+      "def": "en",
+      "min": 0,
+      "max": 0,
+      "enum": [
+        "auto",
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "fr",
+        "de",
+        "es",
+        "ru",
+        "pt",
+        "it"
+      ],
+      "help": "Spoken language of the audio. auto detects it from the first 30s."
+    },
+    {
+      "key": "detect_only",
+      "flag": "-dl",
+      "group": "language",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Exit after detecting the language; produces no transcript."
+    },
+    {
+      "key": "translate",
+      "flag": "-tr",
+      "group": "language",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Translate into English. English is the only target whisper supports."
+    },
+    {
+      "key": "beam_size",
+      "flag": "-bs",
+      "group": "quality",
+      "kind": "int",
+      "def": 5,
+      "min": 1,
+      "max": 10,
+      "help": "Beam size. Higher is slower and usually more accurate."
+    },
+    {
+      "key": "best_of",
+      "flag": "-bo",
+      "group": "quality",
+      "kind": "int",
+      "def": 5,
+      "min": 1,
+      "max": 10,
+      "help": "Candidates kept when beam search is off."
+    },
+    {
+      "key": "temperature",
+      "flag": "-tp",
+      "group": "quality",
+      "kind": "float",
+      "def": 0,
+      "min": 0,
+      "max": 1,
+      "help": "Sampling temperature. 0 is deterministic."
+    },
+    {
+      "key": "temperature_inc",
+      "flag": "-tpi",
+      "group": "quality",
+      "kind": "float",
+      "def": 0.2,
+      "min": 0,
+      "max": 1,
+      "help": "Step added when decoding fails and falls back."
+    },
+    {
+      "key": "no_fallback",
+      "flag": "-nf",
+      "group": "quality",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Disable temperature fallback while decoding."
+    },
+    {
+      "key": "entropy_threshold",
+      "flag": "-et",
+      "group": "threshold",
+      "kind": "float",
+      "def": 2.4,
+      "min": 0,
+      "max": 10,
+      "help": "Entropy above this counts as a decoding failure."
+    },
+    {
+      "key": "logprob_threshold",
+      "flag": "-lpt",
+      "group": "threshold",
+      "kind": "float",
+      "def": -1,
+      "min": -10,
+      "max": 0,
+      "help": "Log-probability below this counts as a decoding failure."
+    },
+    {
+      "key": "no_speech_threshold",
+      "flag": "-nth",
+      "group": "threshold",
+      "kind": "float",
+      "def": 0.6,
+      "min": 0,
+      "max": 1,
+      "help": "Above this, a window is treated as silence."
+    },
+    {
+      "key": "word_threshold",
+      "flag": "-wt",
+      "group": "threshold",
+      "kind": "float",
+      "def": 0.01,
+      "min": 0,
+      "max": 1,
+      "help": "Word timestamp probability threshold."
+    },
+    {
+      "key": "max_context",
+      "flag": "-mc",
+      "group": "segmentation",
+      "kind": "int",
+      "def": -1,
+      "min": -1,
+      "max": 4096,
+      "help": "Text context tokens kept. -1 lets the engine decide."
+    },
+    {
+      "key": "max_len",
+      "flag": "-ml",
+      "group": "segmentation",
+      "kind": "int",
+      "def": 0,
+      "min": 0,
+      "max": 1000,
+      "unit": "chars",
+      "help": "Maximum segment length. 0 is unlimited."
+    },
+    {
+      "key": "split_on_word",
+      "flag": "-sow",
+      "group": "segmentation",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Split on word rather than on token."
+    },
+    {
+      "key": "audio_ctx",
+      "flag": "-ac",
+      "group": "segmentation",
+      "kind": "int",
+      "def": 0,
+      "min": 0,
+      "max": 3000,
+      "help": "Audio context size. 0 uses everything."
+    },
+    {
+      "key": "vad",
+      "flag": "--vad",
+      "group": "vad",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Voice activity detection; skips silence on long recordings."
+    },
+    {
+      "key": "vad_threshold",
+      "flag": "-vt",
+      "group": "vad",
+      "kind": "float",
+      "def": 0.5,
+      "min": 0,
+      "max": 1,
+      "help": "Speech probability threshold for VAD."
+    },
+    {
+      "key": "vad_min_speech_ms",
+      "flag": "-vspd",
+      "group": "vad",
+      "kind": "int",
+      "def": 250,
+      "min": 0,
+      "max": 60000,
+      "unit": "ms",
+      "help": "Shortest speech run kept."
+    },
+    {
+      "key": "vad_min_silence_ms",
+      "flag": "-vsd",
+      "group": "vad",
+      "kind": "int",
+      "def": 100,
+      "min": 0,
+      "max": 60000,
+      "unit": "ms",
+      "help": "Shortest silence used to split segments."
+    },
+    {
+      "key": "vad_pad_ms",
+      "flag": "-vp",
+      "group": "vad",
+      "kind": "int",
+      "def": 30,
+      "min": 0,
+      "max": 5000,
+      "unit": "ms",
+      "help": "Padding around detected speech."
+    },
+    {
+      "key": "threads",
+      "flag": "-t",
+      "group": "backend",
+      "kind": "int",
+      "def": 4,
+      "min": 1,
+      "max": 128,
+      "help": "CPU threads used during computation."
+    },
+    {
+      "key": "processors",
+      "flag": "-p",
+      "group": "backend",
+      "kind": "int",
+      "def": 1,
+      "min": 1,
+      "max": 8,
+      "help": "Parallel workers the audio is split across."
+    },
+    {
+      "key": "gpu_device",
+      "flag": "-dev",
+      "group": "backend",
+      "kind": "int",
+      "def": 0,
+      "min": 0,
+      "max": 15,
+      "help": "GPU index when several are present."
+    },
+    {
+      "key": "no_gpu",
+      "flag": "-ng",
+      "group": "backend",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Disable the GPU even when the runtime has one."
+    },
+    {
+      "key": "flash_attn",
+      "flag": "-fa",
+      "group": "backend",
+      "kind": "bool",
+      "def": true,
+      "min": 0,
+      "max": 0,
+      "help": "Flash attention. Faster, slightly different numerics."
+    },
+    {
+      "key": "initial_prompt",
+      "flag": "--prompt",
+      "group": "advanced",
+      "kind": "string",
+      "def": "",
+      "min": 0,
+      "max": 0,
+      "help": "Seed text: terminology, names, or a style hint."
+    },
+    {
+      "key": "carry_initial_prompt",
+      "flag": "--carry-initial-prompt",
+      "group": "advanced",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Prepend the seed text to every window, not just the first."
+    },
+    {
+      "key": "suppress_nst",
+      "flag": "-sns",
+      "group": "advanced",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Suppress non-speech tokens such as [music]."
+    },
+    {
+      "key": "suppress_regex",
+      "flag": "--suppress-regex",
+      "group": "advanced",
+      "kind": "string",
+      "def": "",
+      "min": 0,
+      "max": 0,
+      "help": "Regex matching tokens to drop entirely."
+    },
+    {
+      "key": "out_srt",
+      "flag": "-osrt",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Write SubRip subtitles."
+    },
+    {
+      "key": "out_vtt",
+      "flag": "-ovtt",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Write WebVTT subtitles."
+    },
+    {
+      "key": "out_txt",
+      "flag": "-otxt",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Write plain text."
+    },
+    {
+      "key": "out_json",
+      "flag": "-oj",
+      "group": "output",
+      "kind": "bool",
+      "def": true,
+      "min": 0,
+      "max": 0,
+      "help": "Write JSON; the pipeline requires it."
+    },
+    {
+      "key": "out_json_full",
+      "flag": "-ojf",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "JSON with extra detail."
+    },
+    {
+      "key": "out_lrc",
+      "flag": "-olrc",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Write LRC lyrics."
+    },
+    {
+      "key": "out_csv",
+      "flag": "-ocsv",
+      "group": "output",
+      "kind": "bool",
+      "def": false,
+      "min": 0,
+      "max": 0,
+      "help": "Write CSV."
+    }
+  ]
+}

@@ -8,6 +8,7 @@ const items = [
   { href: "/", key: "nav.newTask" },
   { href: "/library", key: "nav.library" },
   { href: "/models", key: "nav.models" },
+  { href: "/params", key: "nav.params" },
   { href: "/settings", key: "nav.settings" },
 ] as const;
 

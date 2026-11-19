@@ -38,16 +38,16 @@ const (
 // Three hand-maintained copies drift within a week, so the UI renders from
 // Specs() and a script compares the defaults against the actual binary output.
 type ParamSpec struct {
-	Key   string    // semantic key used by settings/UI, e.g. "input_language"
-	Flag  string    // exact flag from whisper-cli --help
-	Group string    // display group
-	Kind  ParamKind // value domain
-	Def   any       // default as reported by --help
-	Min   float64
-	Max   float64
-	Enum  []string
-	Unit  string
-	Help  string
+	Key   string    `json:"key"`   // semantic key used by settings/UI, e.g. "input_language"
+	Flag  string    `json:"flag"`  // exact flag from whisper-cli --help
+	Group string    `json:"group"` // display group
+	Kind  ParamKind `json:"kind"`  // value domain
+	Def   any       `json:"def"`   // default as reported by --help
+	Min   float64   `json:"min"`
+	Max   float64   `json:"max"`
+	Enum  []string  `json:"enum,omitempty"`
+	Unit  string    `json:"unit,omitempty"`
+	Help  string    `json:"help"`
 }
 
 // WhisperParams is the typed form of every tunable whisper-cli option.

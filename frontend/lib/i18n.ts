@@ -11,6 +11,7 @@ export const zh = {
   "nav.library": "资料库",
   "nav.models": "模型中心",
   "nav.settings": "设置",
+  "nav.params": "运行参数",
 
   "prefs.theme": "主题",
   "prefs.theme.light": "明亮",
@@ -78,6 +79,16 @@ export const zh = {
   "models.tier.max": "极致",
   "models.footnote": "权重不随安装包分发，仅记录官方来源与校验值。安装前请确认对应许可。",
 
+  "params.title": "运行参数",
+  "params.subtitle": "引擎真实支持的选项 · 改过的项会写进产物元数据，可复现",
+  "params.changed": "已修改 {n} 项",
+  "params.allDefault": "全部为默认值",
+  "params.reset": "恢复默认",
+  "params.nothingChanged": "未修改任何参数（全部使用引擎默认）",
+  "params.previewNote": "这就是实际会传给引擎的额外参数：只发与默认不同的值。",
+  "params.default": "默认",
+  "params.modified": "已改",
+
   "settings.title": "设置",
   "settings.subtitle": "端点与模型能力 · 密钥经 DPAPI 加密，不落明文",
   "settings.provider": "Provider",
@@ -123,6 +134,7 @@ export const en: Record<Key, string> = {
   "nav.library": "Library",
   "nav.models": "Models",
   "nav.settings": "Settings",
+  "nav.params": "Run parameters",
 
   "prefs.theme": "Theme",
   "prefs.theme.light": "Light",
@@ -189,6 +201,16 @@ export const en: Record<Key, string> = {
   "models.tier.light": "Light",
   "models.tier.max": "Max",
   "models.footnote": "Weights are never bundled; the registry only records official sources and checksums. Check the licence before installing.",
+
+  "params.title": "Run parameters",
+  "params.subtitle": "What the engine actually supports · changes are recorded in the artifact metadata",
+  "params.changed": "{n} changed",
+  "params.allDefault": "all at defaults",
+  "params.reset": "Reset to defaults",
+  "params.nothingChanged": "Nothing changed (engine defaults everywhere)",
+  "params.previewNote": "These are the extra flags a run would receive: only deviations from the default are sent.",
+  "params.default": "default",
+  "params.modified": "changed",
 
   "settings.title": "Settings",
   "settings.subtitle": "Endpoint and model capabilities · keys are DPAPI-encrypted, never stored in plaintext",
