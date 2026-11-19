@@ -167,6 +167,44 @@ func TestRunResumesFromPlan(t *testing.T) {
 	}
 }
 
+// AC-04: changing a parameter must invalidate transcribe, and leaving it alone
+// must not. The first half is what the mechanism exists for; the second half is
+// the one that broke silently, because an empty hash on one side and a fallback on
+// the other made identical settings look like a change on every run.
+func TestPlanInvalidatesTranscribeWhenParamsChange(t *testing.T) {
+	b := newBundle(t)
+	eng := &fakeEngine{segments: []Segment{{StartMS: 0, EndMS: 1000, Text: "x。", Confidence: 0.9}}}
+	warm := map[store.Stage]bool{store.StageSeparate: true, store.StagePolish: true}
+
+	same := map[string]string{"transcribe": "beam_size=1"}
+	r := &Runner{Engine: eng}
+	if _, err := r.Run(context.Background(), Request{Bundle: b, VideoID: "t", Params: same}); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	cp, err := b.ReadCheckpoint("t")
+	if err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	if got := cp.Params[string(store.StageTranscribe)]; got != "beam_size=1" {
+		t.Fatalf("checkpoint recorded %q, want the caller's parameter hash; a stage-name "+
+			"constant here makes every parameter change invisible", got)
+	}
+
+	if p := cp.Plan(b.Observe(), same, warm); len(p.Reasons) != 0 {
+		t.Errorf("identical parameters must not invalidate anything, got %v", p.Reasons)
+	}
+
+	changed := map[string]string{"transcribe": "beam_size=8"}
+	p := cp.Plan(b.Observe(), changed, warm)
+	if p.ResumeAt != store.StageTranscribe {
+		t.Errorf("resume at %q, want %q", p.ResumeAt, store.StageTranscribe)
+	}
+	if len(p.Reasons) == 0 || !strings.Contains(strings.Join(p.Reasons, ";"), "parameters changed") {
+		t.Errorf("reasons %v should name the parameter change", p.Reasons)
+	}
+}
+
 func TestRunRejectsNilEngine(t *testing.T) {
 	b := newBundle(t)
 	if _, err := (&Runner{}).Run(context.Background(), Request{Bundle: b}); err == nil {
