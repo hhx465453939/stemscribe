@@ -155,21 +155,37 @@ func cmdRun(args []string) int {
 	if modelID == "" {
 		modelID = settings.Stages.Whisper
 	}
+	// Start from the engine defaults and apply only what the user asked for. The
+	// zero struct is not a safe baseline: it reads as flash-attention off among
+	// other things, so defaults are the baseline and flags are deltas.
+	params := engine.Defaults()
+	if *lang != "" {
+		params.InputLanguage = *lang
+	}
+	params.Translate = *translate
+	params.DetectOnly = *detectLang
+	if *beam > 0 {
+		params.BeamSize = *beam
+	}
+	if *threads > 0 {
+		params.Threads = *threads
+	}
+	params.VAD = *vad
+	if *prompt != "" {
+		params.InitialPrompt = *prompt
+	}
+
+	engName, engVersion := "synthetic", version
 	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, modelID,
-		string(settings.Runtime.LockedBackend), *durationMS, demux, engine.WhisperParams{
-			InputLanguage: *lang,
-			Translate:     *translate,
-			DetectOnly:    *detectLang,
-			BeamSize:      *beam,
-			Threads:       *threads,
-			VAD:           *vad,
-			InitialPrompt: *prompt,
-		})
+		string(settings.Runtime.LockedBackend), *durationMS, demux, params)
 	if engErr != nil {
 		fmt.Fprintln(os.Stderr, engErr)
 		return 1
 	}
 	fmt.Printf("engine: %s\n", engDesc)
+	if w, ok := eng.(*engine.Whisper); ok {
+		engName, engVersion = "whisper.cpp", w.Version
+	}
 
 	// Separation moved to CHG-0003 (ADR-014). Saying so once and continuing keeps an
 	// unavailable optional stage from failing an otherwise fine transcription.
@@ -206,7 +222,7 @@ func cmdRun(args []string) int {
 		SeparateOpts: pipeline.SeparateOptions{SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
 	})
 	if err != nil {
-		meta := buildMeta(videoID, *title, absInput, "failed")
+		meta := buildMeta(videoID, *title, absInput, "failed", engName, engVersion, params)
 		meta.Stages[string(result.FailedAt)] = store.StageRun{State: "failed", Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		fmt.Fprintf(os.Stderr, "run: failed at %s: %v\n", result.FailedAt, err)
@@ -223,7 +239,7 @@ func cmdRun(args []string) int {
 		return 1
 	}
 
-	meta := buildMeta(videoID, *title, absInput, "done")
+	meta := buildMeta(videoID, *title, absInput, "done", engName, engVersion, params)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}
@@ -251,9 +267,13 @@ func loadSettings(wd string) (config.Settings, config.Layout, error) {
 	return settings, layout, nil
 }
 
-func buildMeta(videoID, title, inputPath, status string) store.Meta {
+func buildMeta(videoID, title, inputPath, status, engName, engVersion string, params engine.WhisperParams) store.Meta {
 	if title == "" {
 		title = filepath.Base(inputPath)
+	}
+	hash := params.HashInput()
+	if hash == "" {
+		hash = "engine-defaults"
 	}
 	return store.Meta{
 		VideoID: videoID,
@@ -262,10 +282,14 @@ func buildMeta(videoID, title, inputPath, status string) store.Meta {
 		Source:  store.Source{Kind: "file", Origin: "local"},
 		Stages:  map[string]store.StageRun{},
 		Provenance: store.Provenance{
+			// Previously this was hardcoded to "synthetic", so a real whisper.cpp run
+			// recorded a false engine in its own metadata. Provenance that lies is
+			// worse than no provenance, because it is trusted.
 			Engines: map[string]store.EngineInfo{
-				"transcribe": {Name: "synthetic", Version: version},
+				"transcribe": {Name: engName, Version: engVersion},
 			},
-			ParamsSnapshotHash: store.HashParams("synthetic", version),
+			ParamsSnapshotHash: store.HashParams(hash),
+			ParamsSnapshot:     params.Snapshot(),
 		},
 	}
 }

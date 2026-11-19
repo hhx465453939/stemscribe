@@ -94,6 +94,10 @@ type Model struct {
 	Engine             Engine   `json:"engine"`
 	DisplayName        string   `json:"display_name"`
 	Langs              []string `json:"langs,omitempty"`
+	// Stems is what a separator model can actually output. MDX-Net and VR are
+	// two-stem (vocals/instrumental); Demucs is four. A global on/off switch cannot
+	// express that, which is why the capability lives on the model (ADR-019).
+	Stems              []string `json:"stems,omitempty"`
 	Files              []FileRef `json:"files"`
 	VRAMEstimateMB     int      `json:"vram_estimate_mb"`
 	RAMEstimateMB      int      `json:"ram_estimate_mb,omitempty"`
@@ -259,6 +263,16 @@ func validateRuntime(rt Runtime) error {
 	return nil
 }
 
+// contains reports whether want is in the slice.
+func contains(hay []string, want string) bool {
+	for _, s := range hay {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
 func validateModel(m Model) error {
 	if m.ID == "" {
 		return fmt.Errorf("empty id")
@@ -268,6 +282,22 @@ func validateModel(m Model) error {
 	}
 	if m.Family != string(EngineWhisper) && m.Family != string(EngineSeparator) {
 		return fmt.Errorf("unknown family %q", m.Family)
+	}
+	if m.Family == string(EngineSeparator) {
+		// Without declared stems the UI cannot know whether to offer 2 or 4 outputs,
+		// and a wrong guess silently drops tracks the model did produce.
+		if len(m.Stems) < 2 {
+			return fmt.Errorf("separator models must declare at least two stems, got %d", len(m.Stems))
+		}
+		valid := map[string]bool{"vocals": true, "instrumental": true, "drums": true, "bass": true, "other": true}
+		for _, s := range m.Stems {
+			if !valid[s] {
+				return fmt.Errorf("unknown stem %q", s)
+			}
+		}
+		if !contains(m.Stems, "vocals") {
+			return fmt.Errorf("separator models must include the vocals stem")
+		}
 	}
 	if m.DisplayName == "" {
 		return fmt.Errorf("display_name is required")

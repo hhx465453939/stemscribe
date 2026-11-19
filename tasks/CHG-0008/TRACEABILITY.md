@@ -84,12 +84,24 @@
 
 ## 5. 里程碑状态
 
-| 里程碑 | 状态 |
-|---|---|
-| M1 参数规格表 + 校验 | ⬜ |
-| M2 引擎全参数接入 | ⬜ |
-| M3 registry stems | ⬜ |
-| M4 后端矩阵 | ⬜ |
-| M5 参数快照 | ⬜ |
-| M6 UI 参数面板 | ⬜ |
-| M7 文档同步 | ⬜ |
+| 里程碑 | 状态 | 证据 |
+|---|---|---|
+| M1 参数规格表 + 校验 | ✅ | 37 specs / 8 groups；`TestSpecsCoverage`、`TestSpecsUnique`、`TestDefaultsMatchSpecs`、`TestValidateConflicts` 全绿 |
+| M2 引擎全参数接入 | ✅ | `whisper.go` 改用 `Params.Args()`；真视频 run 恢复（segments 2，内容为音频原话） |
+| M3 registry stems | ✅ | `Model.Stems` + 校验强制 separator 声明 ≥2 stem 且含 vocals；`uvr-vr-hp2-vocals` 的 URL/体积经 HTTP HEAD 实测（63,454,827 B） |
+| M4 后端矩阵 | ✅ | AMD/Intel → vulkan；DirectML 永不选用并给出原因；`TestSelectBackendAMD/Intel/NoVulkanLoader/NoGPU` 全绿 |
+| M5 参数快照 | ✅ | `meta.json.provenance` 实测：`engines` 为 whisper.cpp/1.9.5（不再是 synthetic）、`params_snapshot: {beam_size:1}`、独立 hash |
+| M6 UI 参数面板 | ✅ | `/params` 路由 9.37 kB；截图 `docs/images/app-params-dark.png`；`i18n-check` 108 键双向对齐、零硬编码 |
+| M7 文档同步 | ⬜ 本轮做 | — |
+
+## 6. 本轮修掉的真缺陷（续 5.4 计数）
+
+| # | 缺陷 | 根因 |
+|---|---|---|
+| 1 | 真转写回归为 `exit 10` | `cli.go` 硬写 `VAD: true`（旧引擎不读该字段，是空操作），接线后成了静默打开的坏开关，而 `Validate()` 从未被调用 |
+| 2 | provenance 自称为 synthetic | `buildMeta` 写死引擎名，真实 whisper.cpp 产物在元数据里擞谎 |
+| 3 | `-oj` 被写成 `if !OutJSON` | 逻辑取反，默认路径根本不请求 JSON |
+| 4 | 先填默认值再合并旧参数 | `InputLanguage=en` 压掉调用方的 `zh` |
+| 5 | 零值 `WhisperParams` 读作 FlashAttn=false | 每次运行静默关掉 flash attention |
+| 6 | stage 失败却打 `✓` | `emit` 忽略 `ev.OK`，把失败画成成功 |
+| 7 | 适配器丢弃引擎 stderr | 只能看到 `exit 10`；已落 `logs/engine.log` 并在错误里附引擎原话 |

@@ -225,6 +225,33 @@
       },
       "source": "https://huggingface.co/ggerganov/whisper.cpp",
       "notes": "Needs a 12 GB class GPU. Size cross-checked against a known-good local copy."
+    },
+    {
+      "id": "uvr-vr-hp2-vocals",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "VR · HP2 all vocals",
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lj1995/VoiceConversionWebUI/resolve/main/uvr5_weights/HP2_all_vocals.pth",
+          "size": 63454827,
+          "sha256": null,
+          "tbd": true,
+          "dest": "HP2_all_vocals.pth"
+        }
+      ],
+      "stems": ["vocals", "instrumental"],
+      "vram_estimate_mb": 1500,
+      "ram_estimate_mb": 1200,
+      "disk_after_install_mb": 61,
+      "quality_tier": "balanced",
+      "segment_default_s": 15,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui"
+      },
+      "source": "https://huggingface.co/lj1995/VoiceConversionWebUI",
+      "notes": "URL and byte size verified by HTTP HEAD on hf-mirror. sha256 stays tbd until the file is downloaded, so install refuses it (F-10). VR family is two-stem."
     }
   ]
 }

@@ -234,8 +234,12 @@ type StageRun struct {
 
 // Provenance is the reproducibility record (G-5).
 type Provenance struct {
-	Engines           map[string]EngineInfo `json:"engines"`
+	Engines            map[string]EngineInfo `json:"engines"`
 	ParamsSnapshotHash string               `json:"params_snapshot_hash"`
+	// ParamsSnapshot holds only the values that differ from the engine defaults.
+	// Recording thirty defaults per bundle would bury the one answer this field
+	// exists to give: what made this run different.
+	ParamsSnapshot map[string]string `json:"params_snapshot,omitempty"`
 }
 
 // EngineInfo pins the exact engine/model used.
