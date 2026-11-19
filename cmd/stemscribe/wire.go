@@ -73,7 +73,7 @@ func backendFor(locked, workdir string) (registry.Backend, string) {
 // "synthetic" stays available on purpose: it is the test double that lets the
 // pipeline be exercised without a 78 MB model download, and CHG-0001's smoke test
 // depends on it. It is never the default.
-func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bool) (pipeline.Engine, string, error) {
+func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bool, params engine.WhisperParams) (pipeline.Engine, string, error) {
 	if strings.EqualFold(kind, "synthetic") {
 		return newSyntheticEngine(durationMS), "synthetic (test double, does not read audio)", nil
 	}
@@ -104,6 +104,7 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bo
 		ModelPath: modelPath,
 		Backend:   string(backend),
 		Version:   rt.Version,
+		Params:    params,
 	}
 	desc := fmt.Sprintf("%s %s (%s)", "whisper.cpp", rt.Version, backend)
 	if reason != "" {

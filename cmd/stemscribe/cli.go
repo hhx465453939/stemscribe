@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hhx465453939/stemscribe/internal/config"
+	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/pipeline"
 	"github.com/hhx465453939/stemscribe/internal/resource"
 	"github.com/hhx465453939/stemscribe/internal/store"
@@ -30,6 +31,15 @@ func cmdRun(args []string) int {
 	// Without this the only way to pick a model is to edit settings.json, which makes
 	// the CLI unusable for trying e.g. an already-installed tiny model.
 	modelFlag := fs.String("model", "", "model id from the registry (default: from settings)")
+
+	// The knobs that matter on the first real use, reachable without the UI (F-10).
+	lang := fs.String("language", "", "spoken language, e.g. zh or auto (default: engine default en)")
+	translate := fs.Bool("translate", false, "translate the result into English")
+	detectLang := fs.Bool("detect-language", false, "only report the detected language, no transcript")
+	beam := fs.Int("beam-size", 0, "beam size 1-10 (0 keeps the engine default)")
+	threads := fs.Int("threads", 0, "CPU threads (0 keeps the engine default)")
+	vad := fs.Bool("vad", false, "voice activity detection (needs a VAD model)")
+	prompt := fs.String("prompt", "", "seed text: terminology, names, style hints")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -140,7 +150,15 @@ func cmdRun(args []string) int {
 		modelID = settings.Stages.Whisper
 	}
 	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, modelID,
-		string(settings.Runtime.LockedBackend), *durationMS, demux)
+		string(settings.Runtime.LockedBackend), *durationMS, demux, engine.WhisperParams{
+			InputLanguage: *lang,
+			Translate:     *translate,
+			DetectOnly:    *detectLang,
+			BeamSize:      *beam,
+			Threads:       *threads,
+			VAD:           *vad,
+			InitialPrompt: *prompt,
+		})
 	if engErr != nil {
 		fmt.Fprintln(os.Stderr, engErr)
 		return 1

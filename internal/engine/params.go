@@ -245,6 +245,12 @@ func (p WhisperParams) Args() []string {
 		a = append(a, "-l", p.InputLanguage)
 	}
 	if p.DetectOnly {
+		// Detection only makes sense with auto: whisper-cli probes the language and
+		// exits, and with a fixed language it fails (observed exit 10) because there
+		// is nothing to detect. Force auto here so the flag combination is always valid.
+		if p.InputLanguage != "auto" {
+			a = append(a, "-l", "auto")
+		}
 		a = append(a, "-dl")
 	}
 	if p.Translate {
