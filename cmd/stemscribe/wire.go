@@ -99,12 +99,31 @@ func buildEngine(kind, workdir, modelID, locked string, durationMS int, demux bo
 		return nil, "", fmt.Errorf("model %s vanished after diagnosis", modelID)
 	}
 
+	// Validate before spending a single second on audio. The guards exist so a
+	// conflicting combination surfaces as an actionable message; skipping them let
+	// a VAD-without-model request reach whisper-cli and come back as an opaque
+	// exit 10 with no hint at all.
+	if regModel, found := reg.FindModel(modelID); found {
+		if err := params.Validate(regModel); err != nil {
+			return nil, "", err
+		}
+	}
+
 	w := &engine.Whisper{
 		Exe:       rt.Entry,
 		ModelPath: modelPath,
 		Backend:   string(backend),
 		Version:   rt.Version,
 		Params:    params,
+	}
+	// Persist the engine's own output. Failures like a bare exit code are
+	// undiagnosable without it, and a user reporting a bug needs something to
+	// attach. Best effort: a missing log must never block the run.
+	logPath := filepath.Join(workdir, "logs", "engine.log")
+	if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o755); mkErr == nil {
+		if f, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); logErr == nil {
+			w.Log = f
+		}
 	}
 	desc := fmt.Sprintf("%s %s (%s)", "whisper.cpp", rt.Version, backend)
 	if reason != "" {

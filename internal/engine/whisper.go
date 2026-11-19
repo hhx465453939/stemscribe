@@ -193,7 +193,14 @@ func (w *Whisper) Transcribe(ctx context.Context, audioPath, outPath string, opt
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("transcribe canceled: %w", ctxErr)
 		}
-		return fmt.Errorf("%s: %w", ClassifyRunError(stderr, exitCodeOf(err)), err)
+		// Include the engine's own last words. Without them a failure such as
+		// "exit status 10" is an opaque code with nothing to search for, which is
+		// exactly how this went undiagnosed for a whole round.
+		detail := lastLine(stderr)
+		if detail == "" {
+			detail = "engine printed nothing to stderr"
+		}
+		return fmt.Errorf("%s: %w: %s", ClassifyRunError(stderr, exitCodeOf(err)), err, detail)
 	}
 
 	raw, err := os.ReadFile(prefix + ".json")

@@ -120,7 +120,13 @@ func cmdRun(args []string) int {
 		case "stage.start":
 			fmt.Printf("→ %s\n", ev.Stage)
 		case "stage.end":
-			fmt.Printf("✓ %s\n", ev.Stage)
+			// Honour the OK flag: printing a tick for a failed stage is how a broken
+			// run looks successful and sends the reader hunting in the wrong place.
+			if ev.OK != nil && !*ev.OK {
+				fmt.Printf("✗ %s (%s)\n", ev.Stage, ev.Note)
+			} else {
+				fmt.Printf("✓ %s\n", ev.Stage)
+			}
 		case "stage.warn":
 			fmt.Printf("! %s (%s) %s\n", ev.Stage, ev.Code, ev.Note)
 		case "stage.skip":
@@ -196,7 +202,7 @@ func cmdRun(args []string) int {
 		Plan:         plan,
 		VideoID:      videoID,
 		Separate:     separate,
-		Transcribe:   pipeline.TranscribeOptions{Model: settings.Stages.Whisper, VAD: true},
+		Transcribe:   pipeline.TranscribeOptions{Model: modelID, VAD: *vad},
 		SeparateOpts: pipeline.SeparateOptions{SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
 	})
 	if err != nil {
