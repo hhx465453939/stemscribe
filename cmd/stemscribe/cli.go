@@ -140,21 +140,6 @@ func cmdRun(args []string) int {
 		store.StagePolish:   true,
 	}
 
-	cp, err := bundle.ReadCheckpoint(videoID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "run: read checkpoint: %v\n", err)
-		return 1
-	}
-	plan := cp.Plan(bundle.Observe(), nil, disabled)
-	for _, reason := range plan.Reasons {
-		fmt.Printf("  resume: %s\n", reason)
-	}
-
-	demux := inputNeedsDemux(absInput)
-	modelID := *modelFlag
-	if modelID == "" {
-		modelID = settings.Stages.Whisper
-	}
 	// Start from the engine defaults and apply only what the user asked for. The
 	// zero struct is not a safe baseline: it reads as flash-attention off among
 	// other things, so defaults are the baseline and flags are deltas.
@@ -175,6 +160,29 @@ func cmdRun(args []string) int {
 		params.InitialPrompt = *prompt
 	}
 
+	cp, err := bundle.ReadCheckpoint(videoID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "run: read checkpoint: %v\n", err)
+		return 1
+	}
+	// The hash the checkpoint records and the hash Plan compares must be the same
+	// value, or the comparison is meaningless. Both come from this one map.
+	//
+	// It must also never be empty: the write path substitutes a fallback for an empty
+	// hash, so an empty value here compared against that fallback on the next run and
+	// reported "parameters changed" for identical settings. A stable sentinel keeps
+	// both sides byte-equal.
+	transcribeHash := params.HashInput()
+	if transcribeHash == "" {
+		transcribeHash = "engine-defaults"
+	}
+	stageParams := map[string]string{"transcribe": transcribeHash}
+
+	demux := inputNeedsDemux(absInput)
+	modelID := *modelFlag
+	if modelID == "" {
+		modelID = settings.Stages.Whisper
+	}
 	engName, engVersion := "synthetic", version
 	eng, engDesc, engErr := buildEngine(*engineName, layout.Root, modelID,
 		string(settings.Runtime.LockedBackend), *durationMS, demux, params)
@@ -197,10 +205,19 @@ func cmdRun(args []string) int {
 		}
 	}
 
+	// Plan only after every `disabled` decision is final. Computing it earlier meant
+	// the plan still believed separation was enabled, so it resumed at a stage the
+	// runner then skipped -- and the parameter comparison for transcribe was never
+	// reached, which is precisely what AC-04 needs to observe.
+	plan := cp.Plan(bundle.Observe(), stageParams, disabled)
+	for _, reason := range plan.Reasons {
+		fmt.Printf("  resume: %s\n", reason)
+	}
+
 	// Put a whisper-ready wav where the pipeline looks for it. The synthetic engine
 	// does not read audio at all, so it needs nothing here.
 	if _, isSynth := eng.(*syntheticEngine); !isSynth {
-		if err = prepareAudio(layout, bundle, absInput, demux); err != nil {
+		if err = prepareAudio(layout, bundle, absInput, demux, planSkips(plan, store.StageDemux)); err != nil {
 			fmt.Fprintf(os.Stderr, "run: prepare audio: %v\n", err)
 			return 1
 		}
@@ -216,6 +233,7 @@ func cmdRun(args []string) int {
 	result, err := runner.Run(runCtx, pipeline.Request{
 		Bundle:       bundle,
 		Plan:         plan,
+		Params:       stageParams,
 		VideoID:      videoID,
 		Separate:     separate,
 		Transcribe:   pipeline.TranscribeOptions{Model: modelID, VAD: *vad},
@@ -265,6 +283,18 @@ func loadSettings(wd string) (config.Settings, config.Layout, error) {
 		return config.Settings{}, config.Layout{}, err
 	}
 	return settings, layout, nil
+}
+
+// planSkips reports whether the plan considers a stage already valid. The caller
+// needs this before the pipeline starts: prepareAudio must not touch a file the
+// checkpoint has already validated, because doing so invalidates its fingerprint.
+func planSkips(p store.Plan, s store.Stage) bool {
+	for _, skip := range p.Skip {
+		if skip == s {
+			return true
+		}
+	}
+	return false
 }
 
 func buildMeta(videoID, title, inputPath, status, engName, engVersion string, params engine.WhisperParams) store.Meta {

@@ -75,6 +75,11 @@ type Request struct {
 	Separate bool
 	Transcribe TranscribeOptions
 	SeparateOpts SeparateOptions
+	// Params carries the real parameter hash per stage, computed by the caller
+	// (only it knows the engine settings). Without this the checkpoint recorded
+	// HashParams(stage) -- a constant -- so changing beam_size could never
+	// invalidate a transcript, and the invalidation branch was dead code.
+	Params map[string]string
 	// VideoID is used for checkpoint bookkeeping.
 	VideoID string
 }
@@ -181,7 +186,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 			return res, stageErr
 		}
 
-		missingOut, markErr := b.MarkDone(&cp, stage, store.HashParams(string(stage)))
+		missingOut, markErr := b.MarkDone(&cp, stage, stageParamHash(req.Params, stage))
 		if markErr != nil {
 			return res, markErr
 		}
@@ -210,6 +215,17 @@ func stageEnabled(s store.Stage, req Request) bool {
 		return false
 	}
 	return true
+}
+
+// stageParamHash returns the caller-supplied hash for a stage, falling back to a
+// stage-derived constant only when the caller supplied nothing. The fallback keeps
+// old bundles readable; it must never be the normal path, because a constant hash
+// makes parameter changes invisible to Plan().
+func stageParamHash(params map[string]string, s store.Stage) string {
+	if h, ok := params[string(s)]; ok && h != "" {
+		return h
+	}
+	return store.HashParams(string(s))
 }
 
 func planSkipped(p store.Plan, s store.Stage) bool {

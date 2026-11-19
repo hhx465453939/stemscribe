@@ -143,10 +143,21 @@ func inputNeedsDemux(path string) bool {
 
 // prepareAudio guarantees <bundle>/audio/16k.wav exists, which is the path the
 // pipeline hands to the engine.
-func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demux bool) error {
+func prepareAudio(layout config.Layout, bundle *store.Bundle, input string, demux, reuse bool) error {
 	dest, err := bundle.Path("audio/16k.wav")
 	if err != nil {
 		return err
+	}
+	if reuse {
+		// The checkpoint already proved this file is the demux output. Rewriting it
+		// would refresh its mtime, and because demux records (size, mod_time) as its
+		// fingerprint, the very next run would report "16k.wav modified" forever --
+		// demux could never be reused, and every downstream stage re-ran with it.
+		// That masked the parameter comparison entirely: Plan returns at the first
+		// invalidated stage, so a changed beam size was reported as a demux problem.
+		if st, statErr := os.Stat(dest); statErr == nil && st.Size() > 0 {
+			return nil
+		}
 	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
