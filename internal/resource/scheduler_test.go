@@ -2,6 +2,7 @@ package resource
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -299,9 +300,11 @@ func TestSelectBackendOldDriver(t *testing.T) {
 		t.Errorf("backend = %q, want vulkan", got.Backend)
 	}
 
+	// DirectML is never selected: whisper.cpp has no such backend, so a
+	// DirectML-only machine must fall to CPU instead of pretending (ADR-018).
 	got = SelectBackend(Hardware{HasNVIDIA: true, DriverMajor: 470, DirectMLAvailable: true}, "")
-	if got.Backend != BackendDirectML {
-		t.Errorf("backend = %q, want directml", got.Backend)
+	if got.Backend != BackendCPU {
+		t.Errorf("backend = %q, want cpu (DirectML is not supported by the engine)", got.Backend)
 	}
 
 	got = SelectBackend(Hardware{HasNVIDIA: true, DriverMajor: 470}, "")
@@ -311,21 +314,74 @@ func TestSelectBackendOldDriver(t *testing.T) {
 }
 
 func TestSelectBackendUnknownDriver(t *testing.T) {
-	got := SelectBackend(Hardware{HasNVIDIA: true, DriverMajor: 0}, "")
+	// Driver unknown but the runtime resolves: CUDA is still worth trying.
+	got := SelectBackend(Hardware{HasNVIDIA: true, DriverMajor: 0, CUDA12Available: true}, "")
 	if got.Backend != BackendCUDA12 {
-		t.Errorf("backend = %q, want cuda12 (driver unknown, let runtime decide)", got.Backend)
+		t.Errorf("backend = %q, want cuda12", got.Backend)
+	}
+	// Driver unknown and no CUDA runtime: prefer Vulkan over a blind CUDA attempt.
+	got = SelectBackend(Hardware{HasNVIDIA: true, DriverMajor: 0, VulkanAvailable: true}, "")
+	if got.Backend != BackendVulkan {
+		t.Errorf("backend = %q, want vulkan", got.Backend)
 	}
 }
 
-func TestSelectBackendWithoutNVIDIA(t *testing.T) {
-	if got := SelectBackend(Hardware{VulkanAvailable: true}, ""); got.Backend != BackendVulkan {
-		t.Errorf("backend = %q, want vulkan", got.Backend)
+// TestSelectBackendAMD is the case the owner called the most important: an AMD
+// card has to reach the GPU through Vulkan instead of dropping to CPU.
+func TestSelectBackendAMD(t *testing.T) {
+	got := SelectBackend(Hardware{HasAMD: true, VulkanAvailable: true}, "")
+	if got.Backend != BackendVulkan {
+		t.Fatalf("AMD GPU must use Vulkan, got %q", got.Backend)
 	}
-	if got := SelectBackend(Hardware{DirectMLAvailable: true}, ""); got.Backend != BackendDirectML {
-		t.Errorf("backend = %q, want directml", got.Backend)
+	if !strings.Contains(got.Reason, "AMD") {
+		t.Errorf("reason must name the vendor so the UI can explain it, got %q", got.Reason)
 	}
-	if got := SelectBackend(Hardware{}, ""); got.Backend != BackendCPU {
+}
+
+func TestSelectBackendIntel(t *testing.T) {
+	got := SelectBackend(Hardware{HasIntel: true, VulkanAvailable: true}, "")
+	if got.Backend != BackendVulkan {
+		t.Fatalf("Intel GPU must use Vulkan, got %q", got.Backend)
+	}
+}
+
+// TestSelectBackendNoVulkanLoader covers a GPU the engine cannot use: say so
+// instead of silently running on CPU.
+func TestSelectBackendNoVulkanLoader(t *testing.T) {
+	got := SelectBackend(Hardware{HasAMD: true}, "")
+	if got.Backend != BackendCPU {
+		t.Fatalf("backend = %q, want cpu", got.Backend)
+	}
+	if !strings.Contains(got.Reason, "Vulkan") {
+		t.Errorf("reason must mention the missing Vulkan loader, got %q", got.Reason)
+	}
+}
+
+func TestSelectBackendNoGPU(t *testing.T) {
+	got := SelectBackend(Hardware{}, "")
+	if got.Backend != BackendCPU {
 		t.Errorf("backend = %q, want cpu", got.Backend)
+	}
+	if !strings.Contains(got.Reason, "no GPU") {
+		t.Errorf("reason = %q, want it to say no GPU was found", got.Reason)
+	}
+}
+
+// TestVendorName keeps the UI-facing string honest.
+func TestVendorName(t *testing.T) {
+	cases := []struct {
+		hw   Hardware
+		want string
+	}{
+		{Hardware{HasNVIDIA: true}, "NVIDIA"},
+		{Hardware{HasAMD: true}, "AMD"},
+		{Hardware{HasIntel: true}, "Intel"},
+		{Hardware{}, "none"},
+	}
+	for _, c := range cases {
+		if got := c.hw.Vendor(); got != c.want {
+			t.Errorf("Vendor() = %q, want %q", got, c.want)
+		}
 	}
 }
 

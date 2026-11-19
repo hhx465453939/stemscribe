@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/pipeline"
@@ -39,6 +38,11 @@ type Whisper struct {
 	Version string
 	// Log receives human-readable engine output; nil discards it.
 	Log *os.File
+
+	// Params carries every user-facing option. A zero value means "the engine's own
+	// defaults"; Transcribe resolves it through Defaults() so an unset struct can
+	// never silently switch something off.
+	Params WhisperParams
 
 	exec ExecFunc
 }
@@ -139,24 +143,42 @@ func (w *Whisper) Transcribe(ctx context.Context, audioPath, outPath string, opt
 	// whisper-cli writes <prefix>.json next to the prefix we give it.
 	prefix := strings.TrimSuffix(outPath, filepath.Ext(outPath))
 
+	// Base flags the adapter itself depends on.
 	args := []string{
 		"-m", w.ModelPath,
 		"-f", audioPath,
-		"-oj", // emit JSON transcript
 		"-of", prefix,
 		"-pp", // print progress to stderr, which we translate
 	}
-	if opts.Language != "" && !strings.EqualFold(opts.Language, "auto") {
-		args = append(args, "-l", opts.Language)
+
+	// Everything else comes from the parameter table, so UI, CLI and docs render
+	// from one source (ADR-016).
+	p := w.Params
+	paramsUnset := p == (WhisperParams{})
+	if paramsUnset {
+		// Zero value must mean "engine defaults", not "all features off": with the
+		// raw zero struct, flash attention would read as disabled and quietly cost
+		// performance on every run.
+		p = Defaults()
 	}
-	if opts.Threads > 0 {
-		args = append(args, "-t", strconv.Itoa(opts.Threads))
+	// Legacy fields win when Params was not populated. The order matters: filling
+	// defaults first would leave InputLanguage="en" in place and drop the caller's
+	// choice, so "zh" silently became English.
+	if opts.Language != "" && (paramsUnset || p.InputLanguage == "") {
+		p.InputLanguage = opts.Language
+	}
+	if opts.Threads > 0 && (paramsUnset || p.Threads == 0) {
+		p.Threads = opts.Threads
+	}
+	if opts.VAD {
+		p.VAD = true
 	}
 	// On CPU builds there is no GPU to use; say so explicitly instead of letting
 	// the binary decide, otherwise a mis-built runtime silently runs on CPU.
 	if w.Backend == "cpu" {
-		args = append(args, "-ng")
+		p.NoGPU = true
 	}
+	args = append(args, p.Args()...)
 
 	lastPct := -1
 	_, stderr, err := w.runner()(ctx, w.Exe, args, func(line string) {

@@ -226,12 +226,34 @@ const (
 )
 
 // Hardware is the fact set used to pick a backend.
+//
 type Hardware struct {
-	HasNVIDIA         bool
+	HasNVIDIA bool
+	HasAMD    bool
+	HasIntel  bool
+	// DriverMajor is the NVIDIA driver major version; meaningless for other vendors,
+	// so it is only consulted when HasNVIDIA is set.
 	DriverMajor       int
 	CUDA12Available   bool
 	VulkanAvailable   bool
 	DirectMLAvailable bool
+}
+
+// HasAnyGPU reports whether a discrete or integrated GPU was detected at all.
+func (h Hardware) HasAnyGPU() bool { return h.HasNVIDIA || h.HasAMD || h.HasIntel }
+
+// Vendor names the detected GPU vendor for UI messages.
+func (h Hardware) Vendor() string {
+	switch {
+	case h.HasNVIDIA:
+		return "NVIDIA"
+	case h.HasAMD:
+		return "AMD"
+	case h.HasIntel:
+		return "Intel"
+	default:
+		return "none"
+	}
 }
 
 // Selection is a backend choice plus the reason it was chosen, so the UI can
@@ -250,32 +272,41 @@ func SelectBackend(hw Hardware, locked Backend) Selection {
 		return Selection{Backend: locked, Reason: "locked by user setting"}
 	}
 
+	// NVIDIA first: CUDA is the fastest path when it is actually present.
 	if hw.HasNVIDIA {
-		if hw.DriverMajor == 0 {
-			// Unknown driver: try CUDA, the caller will downgrade on failure and
-			// log it. Guessing "too old" would strand users on a slow path.
-			return Selection{Backend: BackendCUDA12, Reason: "NVIDIA GPU, driver version unknown"}
-		}
-		if hw.DriverMajor >= minDriverMajor && hw.CUDA12Available {
-			return Selection{Backend: BackendCUDA12, Reason: "CUDA 12 runtime present"}
-		}
-		if hw.DriverMajor < minDriverMajor {
-			if hw.VulkanAvailable {
-				return Selection{Backend: BackendVulkan, Reason: fmt.Sprintf("driver %d < %d, using Vulkan", hw.DriverMajor, minDriverMajor)}
-			}
-			if hw.DirectMLAvailable {
-				return Selection{Backend: BackendDirectML, Reason: fmt.Sprintf("driver %d < %d, using DirectML", hw.DriverMajor, minDriverMajor)}
-			}
-			return Selection{Backend: BackendCPU, Reason: fmt.Sprintf("driver %d < %d and no GPU backend available", hw.DriverMajor, minDriverMajor)}
+		switch {
+		case hw.DriverMajor == 0 && hw.CUDA12Available:
+			// Driver version unknown but the runtime resolves: try CUDA. Guessing
+			// "too old" here would strand a working machine on a slow path.
+			return Selection{Backend: BackendCUDA12, Reason: "NVIDIA GPU, CUDA runtime present (driver version unknown)"}
+		case hw.DriverMajor >= minDriverMajor && hw.CUDA12Available:
+			return Selection{Backend: BackendCUDA12, Reason: "NVIDIA GPU with CUDA 12 runtime"}
 		}
 	}
-	if hw.VulkanAvailable {
-		return Selection{Backend: BackendVulkan, Reason: "no CUDA, Vulkan available"}
+
+	// Every vendor uses Vulkan. This is the branch that keeps AMD and Intel GPUs
+	// out of the CPU fallback: the driver ships the loader, so no vendor SDK is
+	// needed at runtime.
+	if hw.VulkanAvailable && hw.HasAnyGPU() {
+		reason := fmt.Sprintf("%s GPU, Vulkan runtime available", hw.Vendor())
+		if hw.HasNVIDIA {
+			reason = fmt.Sprintf("NVIDIA GPU without usable CUDA (driver %d), Vulkan runtime available", hw.DriverMajor)
+		}
+		return Selection{Backend: BackendVulkan, Reason: reason}
 	}
-	if hw.DirectMLAvailable {
-		return Selection{Backend: BackendDirectML, Reason: "no CUDA/Vulkan, DirectML available"}
+
+	// DirectML is deliberately never selected: whisper.cpp has no DirectML backend,
+	// so offering it would be a promise the engine cannot keep (ADR-018).
+	if hw.DirectMLAvailable && !hw.VulkanAvailable {
+		return Selection{Backend: BackendCPU,
+			Reason: fmt.Sprintf("%s GPU but no Vulkan loader; DirectML is not supported by the engine, using CPU", hw.Vendor())}
 	}
-	return Selection{Backend: BackendCPU, Reason: "no GPU backend available"}
+
+	if hw.HasAnyGPU() {
+		return Selection{Backend: BackendCPU,
+			Reason: fmt.Sprintf("%s GPU but no Vulkan loader available, using CPU", hw.Vendor())}
+	}
+	return Selection{Backend: BackendCPU, Reason: "no GPU detected, using CPU"}
 }
 
 // DowngradeChain returns the ordered backends to try after from fails.

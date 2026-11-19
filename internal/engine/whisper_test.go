@@ -166,7 +166,9 @@ func TestWhisperWithFakeExec(t *testing.T) {
 	}
 
 	var segs []pipeline.Segment
-	err := w.Transcribe(context.Background(), audio, out, pipeline.TranscribeOptions{Language: "en"}, func(s pipeline.Segment) {
+	// Use a non-default language: ADR-016 says only deviations from the engine
+	// default are emitted, so "en" would (correctly) produce no -l at all.
+	err := w.Transcribe(context.Background(), audio, out, pipeline.TranscribeOptions{Language: "zh"}, func(s pipeline.Segment) {
 		segs = append(segs, s)
 	})
 	if err != nil {
@@ -184,8 +186,8 @@ func TestWhisperWithFakeExec(t *testing.T) {
 	if !hasArg(gotArgs, "-oj") || !hasArg(gotArgs, "-of") {
 		t.Errorf("json output flags missing, args = %v", gotArgs)
 	}
-	if !hasArg(gotArgs, "-l") {
-		t.Errorf("language flag missing, args = %v", gotArgs)
+	if !testHasFlagValue(gotArgs, "-l", "zh") {
+		t.Errorf("language flag must carry the chosen language, args = %v", gotArgs)
 	}
 
 	// The adapter must write our contract, not whisper's json.
