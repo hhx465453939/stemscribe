@@ -29,6 +29,31 @@ resolve ──► download ──► probe ──► demux ──┬─► separ
 
 **批量的并行度**：任务级并发由 `resource` 预算决定，默认 `max_concurrent = floor(预算 / 单任务峰值)`，且硬上限 `min(2, NumGPU)`。单 GPU 上转写与分离**不同时跑**（避免争显存），排队串行。
 
+## 2.1 运行控制面（CHG-0010）
+
+阶段由 `internal/runctl` 驱动，CLI 与界面**共用这一条路径**（ADR-024）：
+
+```
+runctl.Service.Start(opts) ──► goroutine ──► Run() ──► pipeline.Runner ──► engine
+        │                                            │
+        └── Status 快照（id/state/stage/percent）◄───┴── emit(Event)
+```
+
+**进度不是估算的**（ADR-023）：分子 = 已 `stage.end` 或已被 checkpoint 判定有效的 `stage.skip`；
+分母 = 本次**启用**的阶段数（`separate` 关闭、`polish` 恒关时不计）。
+因此进度条可能**回跳前先停**，但绝不会跑在工作前面。
+
+`stage.skip` 有两种语义，必须区分：
+
+| Note | 含义 | 计入完成数 |
+|---|---|---|
+| `already valid` | checkpoint 已证明产物有效，属于**已完成的活** | ✅ |
+| `disabled by settings` | 本次不启用，**不在分母里** | ❌ |
+
+> 混同这两者曾让进度报出 `9/7`。计数与分母必须用同一条规则。
+
+事件同时写入 `<bundle>/runs/<runID>.jsonl`，因此界面、CLI 与事后审计看到的是同一份记录。
+
 ## 3. 幂等与 checkpoint
 
 ### 3.1 checkpoint 文件

@@ -9,10 +9,11 @@
 │ L4  UI        Next.js 15 (static export) · WebView2          │
 │               任务看板 / 单集详情 / 模型中心 / 设置            │
 └────────────────────────┬─────────────────────────────────────┘
-                         │ Wails bindings (编译期生成的 TS 函数)
+                         │ HTTP /api/**（同一个 handler 挂到 loopback 与 WebView2）
 ┌────────────────────────▼─────────────────────────────────────┐
 │ L3  App Core  Go：用例编排 / 状态机 / 事件总线                 │
-│     internal/pipeline   internal/store   internal/provider    │
+│     internal/runctl   internal/webapi                          │
+│     internal/pipeline   internal/store   internal/provider     │
 └───┬──────────────┬───────────────┬──────────────┬────────────┘
     │              │               │              │
 ┌───▼────┐  ┌──────▼──────┐  ┌─────▼──────┐  ┌────▼─────────┐
