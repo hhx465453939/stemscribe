@@ -90,7 +90,7 @@
 | M2 引擎全参数接入 | ✅ | `whisper.go` 改用 `Params.Args()`；真视频 run 恢复（segments 2，内容为音频原话） |
 | M3 registry stems | ✅ | `Model.Stems` + 校验强制 separator 声明 ≥2 stem 且含 vocals；`uvr-vr-hp2-vocals` 的 URL/体积经 HTTP HEAD 实测（63,454,827 B） |
 | M4 后端矩阵 | ✅ | AMD/Intel → vulkan；DirectML 永不选用并给出原因；`TestSelectBackendAMD/Intel/NoVulkanLoader/NoGPU` 全绿 |
-| M5 参数快照 | ✅ | `meta.json.provenance` 实测：`engines` 为 whisper.cpp/1.9.5（不再是 synthetic）、`params_snapshot: {beam_size:1}`、独立 hash |
+| M5 参数快照 | ✅ | `meta.json.provenance` 实测：`engines` 为 whisper.cpp/1.9.5（不再是 synthetic）、`params_snapshot: {beam_size:1}`、独立 hash；AC-04 由 `TestPlanInvalidatesTranscribeWhenParamsChange` 锁死 |
 | M6 UI 参数面板 | ✅ | `/params` 路由 9.37 kB；截图 `docs/images/app-params-dark.png`；`i18n-check` 108 键双向对齐、零硬编码 |
 | M7 文档同步 | ✅ | `UI-DESIGN §7` 增运行参数页；`RESOURCE-SCHEDULER §5` 降级链改为 `cuda12 → vulkan → cpu` 并声明 DirectML 不在链上（与 ADR-018 对齐，原文含 directml 属文档撒谎）；`MODEL-REGISTRY §2.1` 增 `stems` 字段语义与陷阱 |
 
@@ -105,3 +105,27 @@
 | 5 | 零值 `WhisperParams` 读作 FlashAttn=false | 每次运行静默关掉 flash attention |
 | 6 | stage 失败却打 `✓` | `emit` 忽略 `ev.OK`，把失败画成成功 |
 | 7 | 适配器丢弃引擎 stderr | 只能看到 `exit 10`；已落 `logs/engine.log` 并在错误里附引擎原话 |
+| 8 | 参数失效机制整段是死代码 | checkpoint 里记的是 `HashParams(stage)`（只由阶段名派生的常量），`Plan` 又恒传 `nil`——改 `beam_size` 不可能失效 |
+| 9 | `prepareAudio` 每次运行无条件重写 `audio/16k.wav` | 该文件的指纹是 (size, mod_time)，重写刷新 mtime 后 `demux` 的指纹恒不匹配：demux 永久重跑、下游连带重跑，还掩盖了参数比较（`Plan` 在第一个失效阶段就返回） |
+| 10 | 计划先算、`disabled` 后改 | 第 199 行才把 `disabled[separate]=true`，计划用的是旧映射，于是永远停在 separate、走不到 transcribe 的参数比较 |
+| 11 | 空参数哈希造成假失效 | 写路径缺值会回退到 `HashParams(stage)`，读路径拿原始空串，两边永不等——同参数每次都说“参数变了” |
+
+### 6.1 AC-04 的真实运行证据
+
+```
+同参重跑   → （无 resume 行，全部阶段复用）
+改 beam=8 → resume: transcribe: parameters changed
+```
+
+这一对输出是 AC-04 的判据：只验证“改了会失效”不够，必须同时验证“没改不会误失效”，
+否则一个永久失效的实现也能让前半句看起来是对的。
+
+## 7. 仍未绿的 AC（不得隐去）
+
+| AC | 状态 | 正交原因 | 交付时如何补 |
+|---|---|---|---|
+| AC-08（Demucs=4） | ⚠️ 部分 | 已入库 VR 两轨（`uvr-vr-hp2-vocals`，URL/体积经 HEAD 实测）；Demucs 四轨条目的真实下载地址未能验证——`lj1995/VoiceConversionWebUI` 下 MDX 路径均 404，hf-mirror 的 `/api/models` 返回空，**不能编造 URL** | 找到可验证的 Demucs 权重直链后加入；校验规则已就位，加条目即自动生效 |
+| AC-09（未就绪选项置灰并给原因） | ❌ 未交付 | 静态导出页面无法在构建期得知运行时硬件/模型状态；需要 GUI 桥（Wails binding）或 shell 侧状态端点，属 CHG-0005 窗口层 | 在 `shell`/`gui` 暴露 `engine-status.json`，前端据此禁用并显示原因 |
+
+> AC-09 目前**没有**以假实现充数：参数页不假装知道可用性，也不静默忽略不可用项。
+> 宁可显式标为未交付，也不做一个看不出真假的置灰。
