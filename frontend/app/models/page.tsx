@@ -32,6 +32,10 @@ export default function ModelsPage() {
   const [loaded, setLoaded] = useState(false);
   const [job, setJob] = useState<InstallJobView | null>(null);
   const [error, setError] = useState("");
+  // Which row the user just clicked. The install job is global and single-flight, so a
+  // failure has to be attributed to a row explicitly; otherwise a refusal lands in a
+  // banner above the tables and the user sees "nothing happened".
+  const [tried, setTried] = useState("");
   const timer = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
@@ -70,6 +74,7 @@ export default function ModelsPage() {
 
   const install = useCallback(async (id: string) => {
     setError("");
+    setTried(id);
     const res = await startInstall(id);
     if (res.error) {
       setError(res.error);
@@ -97,6 +102,14 @@ export default function ModelsPage() {
         {items.map((m) => {
           const tierLabel = m.tier ? tierKey[m.tier] : undefined;
           const busy = running && job?.target === m.id;
+          // Attribute a refusal to this row: async failure via job.target, immediate
+          // failure (bad id, busy) via the row we just clicked.
+          const rowMsg =
+            job?.state === "failed" && job.target === m.id
+              ? job.message
+              : tried === m.id
+                ? error
+                : "";
           return (
             <tr key={m.id}>
               <td>{m.name || m.id}</td>
@@ -128,6 +141,15 @@ export default function ModelsPage() {
                 {tierLabel !== undefined ? (
                   <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
                     {t(tierLabel)}
+                  </span>
+                ) : null}
+                {rowMsg !== "" ? (
+                  <span
+                    className="mono"
+                    role="alert"
+                    style={{ display: "block", marginTop: "var(--sp-2)", color: "var(--text-1)" }}
+                  >
+                    {rowMsg}
                   </span>
                 ) : null}
               </td>
