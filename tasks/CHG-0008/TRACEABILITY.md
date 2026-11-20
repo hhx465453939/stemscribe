@@ -125,7 +125,16 @@
 | AC | 状态 | 正交原因 | 交付时如何补 |
 |---|---|---|---|
 | AC-08（Demucs=4） | ⚠️ 部分 | 已入库 VR 两轨（`uvr-vr-hp2-vocals`，URL/体积经 HEAD 实测）；Demucs 四轨条目的真实下载地址未能验证——`lj1995/VoiceConversionWebUI` 下 MDX 路径均 404，hf-mirror 的 `/api/models` 返回空，**不能编造 URL** | 找到可验证的 Demucs 权重直链后加入；校验规则已就位，加条目即自动生效 |
-| AC-09（未就绪选项置灰并给原因） | ❌ 未交付 | 静态导出页面无法在构建期得知运行时硬件/模型状态；需要 GUI 桥（Wails binding）或 shell 侧状态端点，属 CHG-0005 窗口层 | 在 `shell`/`gui` 暴露 `engine-status.json`，前端据此禁用并显示原因 |
 
-> AC-09 目前**没有**以假实现充数：参数页不假装知道可用性，也不静默忽略不可用项。
-> 宁可显式标为未交付，也不做一个看不出真假的置灰。
+### 7.1 AC-09 已闭环（证据）
+
+| 项 | 证据 |
+|---|---|
+| 后端计算不可用项 | `GET /api/capabilities` 实测：`backend=cpu`、`gpu=false`、`unavailable_params={gpu_device, vad}` 各带原因 |
+| 参数页置灰 + 原因 | 截图 `docs/images/app-params-greyed.png`：`--vad` 与 `-dev` 灰化、带「不可用」标签、原因栏显示 `no VAD model is installed…` / `no GPU runtime is installed…` |
+| 侧栏不再谎报 | 同一截图左下：`cpu · 仅 CPU（未装 GPU 运行时）`（原为硬编码 `cuda12 · 就绪`，与参数页矛盾） |
+| 计算位置 | `internal/runctl/capabilities.go`（只能在这里——引擎/模型实存状态只在这一层可见）；跨 CHG-0010 界线已在 SPEC §9 登记 |
+| 回归 | `go build/vet/test` 10 包、`typecheck`、`lint`、`i18n-check` 全绿；CI 三 job success |
+
+> 置灰不是“把开关关掉”：用户仍能看到该选项及其默认值，只是无法选择一个会失败的值，
+> 且旁边写明了为什么。这就是“不假装”。
