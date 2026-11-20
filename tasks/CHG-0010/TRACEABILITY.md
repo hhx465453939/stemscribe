@@ -44,12 +44,30 @@
 | 4 | 进度报 `3/7` 却 `100%` | 完成数只统计 `stage.end`，未把「已被 checkpoint 判定有效」的 skip 计入 | 已修 |
 | 5 | 进度报 `9/7` | 修正后把「被设置禁用」的 skip 也计入，而分母已扣除它们 | 已修（用 `disabledNote` 区分两种 skip） |
 | 6 | 首次点击必失败（`missing model: whisper-medium`） | 模型解析只看设置、不看**已安装**集合 | 已修：未装时选已装最优模型并 `MODEL_SUBSTITUTED` 事件说明 |
+| 7 | 任务板显示「示例：42 分钟行业访谈」等三条虚构任务 | `api.ts` 的 `demoTasks` 在无桥时兼底 | 已修：改 `GET /api/library` 读 `libraries/*/meta.json` |
+| 8 | 资料库页写死 `BV1xx411c7mD` / `42:10` | `library/page.tsx` 内部硬编码 | 已修：真实 bundle + 从 transcript 推导时长 |
+| 9 | 模型中心谎称已装 `Whisper Medium (q5_0)` 与 `MDX-Net · Kim Vocal 2` | `models/page.tsx` 内部硬编码；本机实际只有 whisper-tiny | 已修：`GET /api/models` 读 registry + 磁盘实存 |
+| 10 | 设置页三个假模型 + 「刷新」`setTimeout` 假装成功 | `demoModels` + 无后端的假动作 | 已修：空列表 + 显式「尚未实现（CHG-0004）」 |
+| 11 | 模型中心把已装的 `ffmpeg-win-x64` 报为未安装 | 运行时存在性按 `backend` 查，ffmpeg 与 whisper-cpu 共用 `cpu` | 已修：ffmpeg 走 `engine.FindFFmpeg`，其余按 backend 唯一归属 |
 
-## 6. 已知遗留（非本 CHG 范围，不隐藏）
+## 6. 本轮新增交付（虚构数据清零）
 
-- `frontend/app/components/TaskBoard.tsx` 仍是写死的示例任务（「示例：42 分钟行业访谈」等）。
-  这属于**向用户展示虚构数据**，与项目「不许编造」同源，但修它需要列出真实 bundle 列表
-  （新端点 + 读取 `libraries/*/meta.json`），应另立子项，不在本 CHG 内偷偷改掉。
+新增端点，均由磁盘/registry 实读，无兼底常量：
+
+| 端点 | 数据源 | 截图 |
+|---|---|---|
+| `GET /api/library` | `libraries/*/meta.json` + `text/transcript.json` | `docs/images/app-library.png` |
+| `GET /api/models` | `registry.Builtin()` + `FindModel`/`FindRuntime`/`FindFFmpeg` | `docs/images/app-models.png` |
+| `GET /api/capabilities` | 固定真实值（分离/润色未实现） | — |
+
+实测：`/api/models` 的 installed = `whisper-tiny`(whisper) + `whispercpp-cpu-win-x64` + `ffmpeg-win-x64`；
+`/api/library` = 1 条 `test.mp4 · 2 段 · 0:07 · 已完成`。
+
+## 7. 仍未实现（如实标注，不伪装）
+
+- `settings` 页的 Provider 接入（真实模型探测/密钥保存）——属 CHG-0004，当前显示显式未实现。
+- 暂停/取消按钮：`context` 取消已通，UI 控件未做（SPEC §2 已列为不做）。
+- 分离真实推理（CHG-0003）、Demucs 四轨条目（无可验证直链）。
 
 ## 5. 未覆盖（如实标注）
 
