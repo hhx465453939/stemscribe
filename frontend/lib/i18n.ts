@@ -104,6 +104,7 @@ export const zh = {
   "params.default": "默认",
   "params.modified": "已改",
 
+  "settings.notImplemented": "Provider 层尚未实现（CHG-0004）· 刷新与模型探测都还没有真实后端",
   "settings.title": "设置",
   "settings.subtitle": "端点与模型能力 · 密钥经 DPAPI 加密，不落明文",
   "settings.provider": "Provider",
@@ -242,6 +243,7 @@ export const en: Record<Key, string> = {
   "params.default": "default",
   "params.modified": "changed",
 
+  "settings.notImplemented": "Provider layer is not implemented yet (CHG-0004) · neither refresh nor model probing has a real backend",
   "settings.title": "Settings",
   "settings.subtitle": "Endpoint and model capabilities · keys are DPAPI-encrypted, never stored in plaintext",
   "settings.provider": "Provider",

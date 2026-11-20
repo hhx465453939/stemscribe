@@ -39,8 +39,6 @@ export default function SettingsPage() {
   const [selected, setSelected] = useState(0);
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:11434/v1");
   const [apiKey, setApiKey] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshed, setRefreshed] = useState(false);
 
   const model = models[selected];
   const sourceLabel = model
@@ -88,24 +86,10 @@ export default function SettingsPage() {
         </div>
 
         <div className="row row--between">
-          <span className="mono muted">
-            {refreshed ? t("settings.refreshed", { n: models.length }) : t("settings.hint")}
-          </span>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              setRefreshing(true);
-              // Real implementation calls App.RefreshModels(providerID).
-              window.setTimeout(() => {
-                setRefreshing(false);
-                setRefreshed(true);
-              }, 400);
-            }}
-            disabled={refreshing}
-          >
-            {refreshing ? t("settings.refreshing") : t("settings.refresh")}
-          </button>
+          {/* Previously this row faked a refresh with setTimeout and then claimed
+              success with a model count. Nothing was fetched, so the message was
+              fabricated. Say what is actually true until CHG-0004 lands. */}
+          <span className="mono muted">{t("settings.notImplemented")}</span>
         </div>
       </div>
 
