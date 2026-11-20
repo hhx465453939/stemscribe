@@ -103,6 +103,15 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
 
+	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+		cat, err := runctl.CatalogNow(workdir)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, cat)
+	})
+
 	mux.HandleFunc("/api/capabilities", func(w http.ResponseWriter, r *http.Request) {
 		// Stated plainly instead of omitted: the UI needs something to grey out
 		// against, and an empty object would look like "everything is available".

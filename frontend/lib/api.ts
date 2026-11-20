@@ -78,6 +78,64 @@ export function bridge(): Bridge | null {
 
 export const isShell = (): boolean => bridge() !== null;
 
+export interface LibraryItemView {
+  id: string;
+  title: string;
+  status: string;
+  segments: number;
+  duration_ms: number;
+  engine: string;
+  engine_version: string;
+}
+
+/** Real bundles only. An empty array is the truth when nothing has run yet. */
+export async function listLibrary(): Promise<LibraryItemView[]> {
+  try {
+    const res = await fetch("/api/library", { cache: "no-store" });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: LibraryItemView[] };
+    return body.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export interface CatalogItemView {
+  id: string;
+  name: string;
+  kind: string;
+  license: string;
+  tier?: string;
+  size_mb: number;
+  vram_mb: number;
+  installed: boolean;
+}
+
+export interface CatalogView {
+  installed: CatalogItemView[];
+  available: CatalogItemView[];
+}
+
+/** Installed versus downloadable, as reported by the Go registry. */
+export async function listCatalog(): Promise<CatalogView> {
+  try {
+    const res = await fetch("/api/models", { cache: "no-store" });
+    if (!res.ok) return { installed: [], available: [] };
+    return (await res.json()) as CatalogView;
+  } catch {
+    return { installed: [], available: [] };
+  }
+}
+
+/** Formats mm:ss from milliseconds; used by the library table. */
+export function formatDuration(ms: number): string {
+  if (!ms || ms <= 0) return "—";
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 interface LibraryItem {
   id: string;
   title: string;

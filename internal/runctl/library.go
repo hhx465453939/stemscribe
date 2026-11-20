@@ -23,6 +23,7 @@ type BundleSummary struct {
 	Status      string `json:"status"`
 	Dir         string `json:"dir"`
 	Segments    int    `json:"segments"`
+	DurationMS  int    `json:"duration_ms"`
 	StagesDone  int    `json:"stages_done"`
 	StagesTotal int    `json:"stages_total"`
 	Engine      string `json:"engine"`
@@ -85,6 +86,11 @@ func Library(workdir string) ([]BundleSummary, error) {
 		}
 		if segs, sErr := pipeline.ReadTranscript(filepath.Join(dir, "text", "transcript.json")); sErr == nil {
 			sum.Segments = len(segs)
+			// Duration comes from the transcript itself, not from the container: the
+			// board should describe the work that was actually produced.
+			if n := len(segs); n > 0 {
+				sum.DurationMS = segs[n-1].EndMS
+			}
 		}
 		if info, iErr := e.Info(); iErr == nil {
 			sum.UpdatedAt = info.ModTime().UTC().Format(time.RFC3339)
