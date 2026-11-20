@@ -27,6 +27,7 @@ export default function ParamsPage() {
   const { t, lang } = usePrefs();
   const [overrides, setOverrides] = useState<Overrides>({});
   const [loaded, setLoaded] = useState(false);
+  const [unavailable, setUnavailable] = useState<Record<string, string>>({});
 
   useEffect(() => {
     try {
@@ -36,6 +37,22 @@ export default function ParamsPage() {
       /* private mode or corrupt value: start from defaults */
     }
     setLoaded(true);
+  }, []);
+
+  // AC-09: disable what this machine cannot actually do, and say why. The list is
+  // computed by the backend from real state (installed runtimes and models); guessing
+  // it here would produce a control that looks usable and fails at run time.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/capabilities", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { unavailable_params?: Record<string, string> } | null) => {
+        if (alive && d?.unavailable_params) setUnavailable(d.unavailable_params);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const set = (key: string, value: string) => {
@@ -122,18 +139,26 @@ export default function ParamsPage() {
                         <td style={{ width: "30%" }}>
                           {pick(paramLabels[s.key], lang, s.key)}
                         </td>
-                        <td style={{ width: "26%" }}>{control(s, effective(s), set)}</td>
+                        <td style={{ width: "26%" }}>
+                          {control(s, effective(s), set, unavailable[s.key] !== undefined)}
+                        </td>
                         <td className="mono muted">
                           {s.flag} · {t("params.default")} {String(s.def)}
                           {s.unit ? ` ${s.unit}` : ""}
-                          {overrides[s.key] !== undefined ? (
+                          {unavailable[s.key] !== undefined ? (
+                            <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
+                              {t("params.unavailable")}
+                            </span>
+                          ) : overrides[s.key] !== undefined ? (
                             <span className="tag tag--manual" style={{ marginLeft: "var(--sp-2)" }}>
                               {t("params.modified")}
                             </span>
                           ) : null}
                         </td>
                         <td className="muted" style={{ width: "34%" }}>
-                          {pick(paramHelps[s.key], lang, s.help)}
+                          {unavailable[s.key] !== undefined
+                            ? unavailable[s.key]
+                            : pick(paramHelps[s.key], lang, s.help)}
                         </td>
                       </tr>
                     ))}
@@ -151,6 +176,7 @@ function control(
   s: Spec,
   value: string,
   set: (key: string, v: string) => void,
+  disabled: boolean,
 ): React.ReactNode {
   if (s.kind === "bool") {
     return (
@@ -158,6 +184,7 @@ function control(
         <input
           type="checkbox"
           checked={value === "true"}
+          disabled={disabled}
           onChange={(e) => set(s.key, e.target.checked ? "true" : "")}
         />
         <span className="mono muted">{value === "true" ? "on" : "off"}</span>
@@ -169,6 +196,7 @@ function control(
       <select
         className="input"
         value={value}
+        disabled={disabled}
         onChange={(e) => set(s.key, e.target.value)}
         aria-label={s.key}
       >
@@ -189,6 +217,7 @@ function control(
         min={s.min}
         max={s.max}
         step={s.kind === "float" ? 0.05 : 1}
+        disabled={disabled}
         onChange={(e) => set(s.key, e.target.value)}
         aria-label={s.key}
       />
@@ -199,6 +228,7 @@ function control(
       className="input"
       type="text"
       value={value}
+      disabled={disabled}
       onChange={(e) => set(s.key, e.target.value)}
       aria-label={s.key}
     />

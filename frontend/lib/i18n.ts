@@ -104,6 +104,8 @@ export const zh = {
   "params.previewNote": "这就是实际会传给引擎的额外参数：只发与默认不同的值。",
   "params.default": "默认",
   "params.modified": "已改",
+  "params.unavailable": "不可用",
+  "resource.cpuOnly": "仅 CPU（未装 GPU 运行时）",
 
   "settings.notImplemented": "Provider 层尚未实现（CHG-0004）· 刷新与模型探测都还没有真实后端",
   "library.empty": "资料库还是空的 · 跑完第一个任务后会出现",
@@ -247,6 +249,8 @@ export const en: Record<Key, string> = {
   "params.previewNote": "These are the extra flags a run would receive: only deviations from the default are sent.",
   "params.default": "default",
   "params.modified": "changed",
+  "params.unavailable": "Unavailable",
+  "resource.cpuOnly": "CPU only (no GPU runtime)",
 
   "settings.notImplemented": "Provider layer is not implemented yet (CHG-0004) · neither refresh nor model probing has a real backend",
   "library.empty": "The library is empty · it fills up after the first run",

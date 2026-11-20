@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { usePrefs } from "./Providers";
 
 const items = [
@@ -15,6 +16,26 @@ const items = [
 export function Sidebar() {
   const pathname = usePathname();
   const { t, theme, setTheme, lang, setLang } = usePrefs();
+  const [backend, setBackend] = useState<string>("");
+  const [gpu, setGpu] = useState<boolean | null>(null);
+
+  // The footer used to say "cuda12 · ready" unconditionally, which contradicted the
+  // parameters page on the same screen whenever only the cpu runtime was installed.
+  // Report what the backend actually selected instead of asserting the best case.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/capabilities", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { backend?: string; gpu?: boolean } | null) => {
+        if (!alive || !d) return;
+        if (d.backend) setBackend(d.backend);
+        if (typeof d.gpu === "boolean") setGpu(d.gpu);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <aside className="sidebar">
@@ -79,7 +100,10 @@ export function Sidebar() {
         {/* Always visible: knowing what the machine is doing is the core promise. */}
         <div className="resource-bar">
           <span>{t("resource.gpu")}</span>
-          <span>cuda12 · {t("resource.ready")}</span>
+          <span>
+            {backend === "" ? "—" : backend} ·{" "}
+            {gpu === true ? t("resource.ready") : t("resource.cpuOnly")}
+          </span>
         </div>
       </div>
     </aside>

@@ -267,5 +267,6 @@ func (p WhisperParams) Validate(model registry.Model) error  // 冲突检测
 | `internal/pipeline/**`、`internal/store/**`（参数快照，**跨界**） | CHG-0008（同批登记理由：参数失效逻辑必须在 Plan 内） |
 | `cmd/stemscribe/**` | CHG-0008 |
 | `frontend/app/**`、`frontend/lib/i18n.ts` | CHG-0008（与 CHG-0005 交叠，登记） |
+| `internal/runctl/**`、`internal/webapi/**`（**跨界**） | CHG-0010 所有；CHG-0008 仅因 AC-09 需要在这里计算“哪选项当前不可用”（引擎/模型的实存状态只有这一层看得到），不得改动运行控制语义 |
 | `scripts/param-defaults-check.ps1` | CHG-0008 |
 | `docs/{UI-DESIGN,RESOURCE-SCHEDULER,MODEL-REGISTRY}.md` | CHG-0008 |

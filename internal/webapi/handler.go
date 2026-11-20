@@ -113,14 +113,14 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 	})
 
 	mux.HandleFunc("/api/capabilities", func(w http.ResponseWriter, r *http.Request) {
-		// Stated plainly instead of omitted: the UI needs something to grey out
-		// against, and an empty object would look like "everything is available".
-		writeJSON(w, http.StatusOK, map[string]any{
-			"separation": false,
-			"separation_note": "vocal separation is not implemented yet (CHG-0003)",
-			"polish": false,
-			"polish_note": "LLM polishing needs a provider (CHG-0004)",
-		})
+		// Computed, not asserted: the parameters page greys out exactly these keys, so a
+		// hardcoded true/false here would decide what the user is allowed to touch.
+		caps, err := runctl.CapabilitiesNow(workdir)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, caps)
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
