@@ -17,6 +17,8 @@
 | CHG-0008 | Runtime Options & Backend Compatibility（参数控制面 + 后端矩阵） | **approved** | `internal/engine/**`、`internal/registry/**`、`internal/resource/**`、`internal/pipeline/**` 与 `internal/store/**`（仅参数快照，跨界已登记）、`cmd/stemscribe/**`、`frontend/app/**`、`scripts/param-defaults-check.ps1`、`docs/{UI-DESIGN,RESOURCE-SCHEDULER,MODEL-REGISTRY}.md` | 0002 |
 | CHG-0010 | Run Control & Live Progress（单击运行 + 实时进度） | **approved** | `internal/runctl/**`、`internal/webapi/**`、`cmd/stemscribe-gui/**`、`cmd/stemscribe/{cli,shell}.go`、`internal/webui/**`（仅加 ServeHandler）、`frontend/app/**`、`frontend/lib/{i18n,api}.ts`、`scripts/build.ps1`、`docs/{ARCHITECTURE,PIPELINE,UI-DESIGN}.md`、`tasks/README.md` | 0008 |
 | CHG-0011 | Provisioning（从界面安装模型与运行时） | **approved** | `internal/runctl/install.go`、`cmd/stemscribe/install.go`、`internal/webapi/handler.go`（仅新增 install 路由）、`frontend/app/models/page.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{MODEL-REGISTRY,UI-DESIGN}.md`、`tasks/README.md` | 0002、0010 |
+| CHG-0012 | Multi-file Intake & Run Queue（多文件录入 + 串行队列） | **approved**（M3 拖入未交付） | `internal/runctl/queue.go`、`internal/webapi/handler.go`（queue 路由）、`cmd/stemscribe-gui/main_gui.go`、`frontend/app/components/NewTask.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{PIPELINE,UI-DESIGN}.md`、`tasks/README.md` | 0010 |
+| CHG-0013 | UX Essentials（审计 P0：参数生效/输出目录/浏览/打开产物） | **approved** | `internal/config/config.go`、`internal/runctl/run.go`、`internal/webapi/handler.go`、`cmd/stemscribe-gui/main_gui.go`、`frontend/app/components/NewTask.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{UX-AUDIT,UI-DESIGN}.md`、`tasks/README.md` | 0010、0011、0012 |
 
 > `planned` 的 CHG 目录尚未创建。开工时复制 `CHG-0001/` 结构并改写内容，然后把 status 从 `draft` 提到 `approved`。
 
