@@ -30,6 +30,9 @@ type RunRequest struct {
 // delegated to fallback, so a single mux can serve both API and static assets.
 func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handler {
 	mux := http.NewServeMux()
+	// One installer per handler: installs are serialised, because a second concurrent
+	// download of the same artifact would corrupt the shared .part file.
+	inst := runctl.NewInstaller()
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
@@ -110,6 +113,33 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 			return
 		}
 		writeJSON(w, http.StatusOK, cat)
+	})
+
+	mux.HandleFunc("/api/models/install", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, inst.Status())
+	})
+
+	mux.HandleFunc("/api/models/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/api/models/")
+		id, ok := strings.CutSuffix(rest, "/install")
+		if !ok || id == "" || strings.Contains(id, "/") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown path"})
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
+			return
+		}
+		jobID, err := inst.Start(workdir, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == runctl.ErrInstallBusy {
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"id": jobID})
 	})
 
 	mux.HandleFunc("/api/capabilities", func(w http.ResponseWriter, r *http.Request) {

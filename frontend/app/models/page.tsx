@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrefs } from "../components/Providers";
-import { listCatalog, type CatalogItemView, type CatalogView } from "@/lib/api";
+import {
+  getInstallStatus,
+  listCatalog,
+  startInstall,
+  type CatalogItemView,
+  type CatalogView,
+  type InstallJobView,
+} from "@/lib/api";
 import type { Key } from "@/lib/i18n";
 
-// Registry family -> dictionary key. Kept as a lookup rather than string
-// concatenation so a new family fails loudly at the type level instead of rendering
-// a raw key.
+// Registry family -> dictionary key. A lookup rather than string concatenation so a
+// new family fails at the type level instead of rendering a raw key.
 const kindKey: Record<string, Key> = {
   whisper: "models.kind.stt",
   separator: "models.kind.sep",
@@ -24,18 +30,53 @@ export default function ModelsPage() {
   const { t } = usePrefs();
   const [catalog, setCatalog] = useState<CatalogView>({ installed: [], available: [] });
   const [loaded, setLoaded] = useState(false);
+  const [job, setJob] = useState<InstallJobView | null>(null);
+  const [error, setError] = useState("");
+  const timer = useRef<number | null>(null);
+
+  const reload = useCallback(async () => {
+    const next = await listCatalog();
+    setCatalog(next);
+    setLoaded(true);
+  }, []);
 
   useEffect(() => {
-    let alive = true;
-    listCatalog().then((next) => {
-      if (alive) {
-        setCatalog(next);
-        setLoaded(true);
-      }
-    });
+    void reload();
+  }, [reload]);
+
+  const running = job?.state === "running";
+
+  // Poll only while an install is in flight. "Installed" is decided by the backend
+  // re-reading the disk, so the board cannot drift from reality.
+  useEffect(() => {
+    if (!running) {
+      if (timer.current !== null) window.clearInterval(timer.current);
+      timer.current = null;
+      return;
+    }
+    timer.current = window.setInterval(() => {
+      void getInstallStatus().then((next) => {
+        if (!next) return;
+        setJob(next);
+        if (next.state === "done") void reload();
+        if (next.state === "failed") setError(next.message);
+      });
+    }, 500);
     return () => {
-      alive = false;
+      if (timer.current !== null) window.clearInterval(timer.current);
+      timer.current = null;
     };
+  }, [running, reload]);
+
+  const install = useCallback(async (id: string) => {
+    setError("");
+    const res = await startInstall(id);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    const st = await getInstallStatus();
+    if (st) setJob(st);
   }, []);
 
   const label = (m: CatalogItemView) => t(kindKey[m.kind] ?? "models.kind.stt");
@@ -55,6 +96,7 @@ export default function ModelsPage() {
       <tbody>
         {items.map((m) => {
           const tierLabel = m.tier ? tierKey[m.tier] : undefined;
+          const busy = running && job?.target === m.id;
           return (
             <tr key={m.id}>
               <td>{m.name || m.id}</td>
@@ -63,8 +105,26 @@ export default function ModelsPage() {
               <td className="num">{m.vram_mb > 0 ? `${m.vram_mb} MB` : "—"}</td>
               <td className="mono">{m.license || "—"}</td>
               <td>
-                <span className={installed ? "dot dot--done" : "dot"} aria-hidden />{" "}
-                {installed ? t("models.verified") : t("models.notInstalled")}
+                {installed ? (
+                  <>
+                    <span className="dot dot--done" aria-hidden /> {t("models.verified")}
+                  </>
+                ) : (
+                  <>
+                    <span className="dot" aria-hidden /> {t("models.notInstalled")}
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ marginLeft: "var(--sp-3)" }}
+                      disabled={busy || running}
+                      onClick={() => void install(m.id)}
+                    >
+                      {busy
+                        ? `${t("models.installing")}${job && job.percent > 0 ? ` ${job.percent}%` : ""}`
+                        : t("models.install")}
+                    </button>
+                  </>
+                )}
                 {tierLabel !== undefined ? (
                   <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
                     {t(tierLabel)}
@@ -82,6 +142,14 @@ export default function ModelsPage() {
     <>
       <h1 className="page-title">{t("models.title")}</h1>
       <p className="page-sub">{t("models.subtitle")}</p>
+
+      {/* Refusals are shown verbatim: "sha256 not measured" is an answer, and hiding it
+          behind a generic failure would send the user hunting for a network problem. */}
+      {error !== "" ? (
+        <p className="mono" style={{ margin: 0, color: "var(--text-1)" }} role="alert">
+          {t("models.installFailed")}: {error}
+        </p>
+      ) : null}
 
       {!loaded ? <p className="mono muted">{t("home.loading")}</p> : null}
 

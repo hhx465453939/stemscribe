@@ -127,6 +127,38 @@ export async function listCatalog(): Promise<CatalogView> {
   }
 }
 
+export interface InstallJobView {
+  id: string;
+  target: string;
+  state: "idle" | "running" | "done" | "failed";
+  percent: number;
+  message: string;
+}
+
+/** Starts an install. Returns an error string instead of throwing, so the UI can show
+ * the refusal verbatim (unverified entries are refused by design, not by accident). */
+export async function startInstall(id: string): Promise<{ error?: string }> {
+  try {
+    const res = await fetch(`/api/models/${encodeURIComponent(id)}/install`, { method: "POST" });
+    const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+    if (!res.ok) return { error: body.error || `HTTP ${res.status}` };
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Current install job. Percent is only meaningful when > 0. */
+export async function getInstallStatus(): Promise<InstallJobView | null> {
+  try {
+    const res = await fetch("/api/models/install", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as InstallJobView;
+  } catch {
+    return null;
+  }
+}
+
 /** Formats mm:ss from milliseconds; used by the library table. */
 export function formatDuration(ms: number): string {
   if (!ms || ms <= 0) return "—";
