@@ -18,6 +18,8 @@ export function Sidebar() {
   const { t, theme, setTheme, lang, setLang } = usePrefs();
   const [backend, setBackend] = useState<string>("");
   const [gpu, setGpu] = useState<boolean | null>(null);
+  const [vramTotalMB, setVramTotalMB] = useState(0);
+  const [vramFreeMB, setVramFreeMB] = useState(0);
 
   // The footer used to say "cuda12 · ready" unconditionally, which contradicted the
   // parameters page on the same screen whenever only the cpu runtime was installed.
@@ -26,10 +28,12 @@ export function Sidebar() {
     let alive = true;
     fetch("/api/capabilities", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { backend?: string; gpu?: boolean } | null) => {
+      .then((d: { backend?: string; gpu?: boolean; vram_total_mb?: number; vram_free_mb?: number } | null) => {
         if (!alive || !d) return;
         if (d.backend) setBackend(d.backend);
         if (typeof d.gpu === "boolean") setGpu(d.gpu);
+        if (typeof d.vram_total_mb === "number") setVramTotalMB(d.vram_total_mb);
+        if (typeof d.vram_free_mb === "number") setVramFreeMB(d.vram_free_mb);
       })
       .catch(() => {});
     return () => {
@@ -101,9 +105,14 @@ export function Sidebar() {
         <div className="resource-bar">
           <span>{t("resource.gpu")}</span>
           <span>
-            {backend === "" ? "—" : backend} ·{" "}
-            {gpu === true ? t("resource.ready") : t("resource.cpuOnly")}
+            {vramTotalMB > 0
+              ? `${(vramFreeMB / 1024).toFixed(1)} / ${Math.round(vramTotalMB / 1024)} GB`
+              : "—"}
           </span>
+        </div>
+        <div className="resource-bar">
+          <span>{backend === "" ? "—" : backend}</span>
+          <span>{gpu === true ? t("resource.ready") : t("resource.cpuOnly")}</span>
         </div>
       </div>
     </aside>

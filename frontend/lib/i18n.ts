@@ -32,7 +32,7 @@ export const zh = {
   "prefs.theme.light": "明亮",
   "prefs.theme.dark": "暗黑",
   "prefs.lang": "语言",
-  "resource.gpu": "GPU 8.1 / 12 GB",
+  "resource.gpu": "GPU",
   "resource.ready": "就绪",
 
   "home.title": "新建任务",
@@ -177,7 +177,7 @@ export const en: Record<Key, string> = {
   "prefs.theme.light": "Light",
   "prefs.theme.dark": "Dark",
   "prefs.lang": "Language",
-  "resource.gpu": "GPU 8.1 / 12 GB",
+  "resource.gpu": "GPU",
   "resource.ready": "ready",
 
   "home.title": "New task",

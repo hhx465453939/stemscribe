@@ -3,6 +3,7 @@ package runctl
 import (
 	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/registry"
+	"github.com/hhx465453939/stemscribe/internal/resource"
 )
 
 // Capabilities describes what this machine can actually do right now.
@@ -15,6 +16,11 @@ type Capabilities struct {
 	Backend           string            `json:"backend"`
 	BackendReason     string            `json:"backend_reason"`
 	GPU               bool              `json:"gpu"`
+	// VRAMTotalMB is measured, not asserted: the sidebar used to print a hardcoded
+	// "GPU 8.1 / 12 GB" from the dictionary, which disagreed with the same screen's
+	// own backend line. 0 means "not measured" and the UI shows a dash.
+	VRAMTotalMB       int               `json:"vram_total_mb"`
+	VRAMFreeMB        int               `json:"vram_free_mb"`
 	Separation        bool              `json:"separation"`
 	SeparationReason  string            `json:"separation_reason"`
 	Polish            bool              `json:"polish"`
@@ -48,6 +54,15 @@ func CapabilitiesNow(workdir string) (Capabilities, error) {
 	// be an accepted-but-ignored setting.
 	if !c.GPU {
 		c.UnavailableParams["gpu_device"] = "no GPU runtime is installed; this run uses the CPU build"
+	}
+
+	// Report measured memory so the resource bar cannot claim a number nobody probed.
+	probe := resource.NewProbe()
+	if total, err := probe.TotalMB(); err == nil {
+		c.VRAMTotalMB = total
+	}
+	if free, err := probe.FreeMB(); err == nil {
+		c.VRAMFreeMB = free
 	}
 
 	return c, nil
