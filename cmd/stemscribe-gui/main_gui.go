@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/runctl"
@@ -22,6 +23,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=..."
@@ -36,6 +38,31 @@ func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
 // Version is read by the settings page.
 func (a *App) Version() string { return version }
+
+// PickFiles opens the native multi-file picker.
+//
+// This exists because a browser cannot hand us an absolute path: the file input gives
+// bytes, and copying a multi-gigabyte video through the page just to learn its name
+// would be the wrong solution. Only the desktop window can do this properly.
+func (a *App) PickFiles() ([]string, error) {
+	return runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select media files",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Media", Pattern: "*.mp4;*.mkv;*.mov;*.webm;*.avi;*.wav;*.mp3;*.m4a;*.flac"},
+		},
+	})
+}
+
+// OpenFolder reveals a bundle in the system file manager.
+func (a *App) OpenFolder(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("folder is gone: %w", err)
+	}
+	return exec.Command("explorer", path).Start()
+}
 
 func main() {
 	ui, err := webui.FS()
@@ -65,8 +92,7 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 10, G: 11, B: 13, A: 255},
 		AssetServer:      &assetserver.Options{Assets: ui, Handler: handler},
 		OnStartup:        app.startup,
-		Bind:             []any{app},
-		Windows: &windows.Options{
+		Bind:             []any{app},		Windows: &windows.Options{
 			// Keep the native frame: the UI is a tool window, not a splash screen.
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,

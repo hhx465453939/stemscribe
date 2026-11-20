@@ -37,6 +37,9 @@ type Options struct {
 	DurationMS int
 	Params     engine.WhisperParams
 	Separate   bool
+	// OutputDir overrides Settings.OutputDir for this run only. Empty means "use the
+	// configured default", which itself falls back to workdir/libraries.
+	OutputDir string
 	// Emit receives pipeline events. All progress is derived from these; nothing is
 	// invented by a timer (ADR-023).
 	Emit func(pipeline.Event)
@@ -107,7 +110,15 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return out, fmt.Errorf("derive video id: %w", err)
 	}
 	out.VideoID = videoID
-	bundle, err := store.New(filepath.Join(layout.Libraries(), videoID))
+	bundleRoot := layout.Libraries()
+	if dir := o.OutputDir; dir != "" {
+		bundleRoot = dir
+	} else if settings.OutputDir != "" {
+		bundleRoot = settings.OutputDir
+	}
+	// One video, one self-contained directory, wherever the user asked for it. Products
+	// flattened into a shared folder would collide and could not be moved as a unit.
+	bundle, err := store.New(filepath.Join(bundleRoot, videoID))
 	if err != nil {
 		return out, fmt.Errorf("open bundle: %w", err)
 	}

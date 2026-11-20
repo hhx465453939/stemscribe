@@ -45,6 +45,10 @@ const (
 type Settings struct {
 	Schema  int    `json:"schema"`
 	Workdir string `json:"workdir"`
+	// OutputDir is where finished bundles land. Empty keeps the historical
+	// workdir/libraries/<videoID> layout; set, it becomes <OutputDir>/<videoID>/.
+	// The per-video self-contained directory is unchanged either way (ADR-029).
+	OutputDir string `json:"output_dir"`
 
 	UI      UIPrefs      `json:"ui"`
 	Stages  StagePrefs   `json:"stages"`

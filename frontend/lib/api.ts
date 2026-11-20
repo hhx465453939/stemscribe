@@ -159,6 +159,116 @@ export async function getInstallStatus(): Promise<InstallJobView | null> {
   }
 }
 
+export interface QueueItemView {
+  id: string;
+  input: string;
+  state: "waiting" | "running" | "done" | "failed";
+  percent: number;
+  segments: number;
+  artifact_dir: string;
+  message: string;
+}
+
+export interface QueueView {
+  items: QueueItemView[];
+  current: string;
+  done: number;
+  total: number;
+}
+
+/** Queues several inputs. Rejected paths come back verbatim so the UI can explain
+ * why (e.g. a .txt is refused at the door rather than failing three stages later). */
+export async function enqueue(
+  inputs: string[],
+  opts: { outputDir?: string; model?: string; params?: Record<string, string> } = {},
+): Promise<{ added?: number; rejected?: string[]; error?: string }> {
+  try {
+    const res = await fetch("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        inputs,
+        output_dir: opts.outputDir ?? "",
+        model: opts.model ?? "",
+        params: opts.params ?? {},
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      added?: number;
+      rejected?: string[];
+      error?: string;
+    };
+    if (!res.ok) return { error: body.error || `HTTP ${res.status}` };
+    return body;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function getQueue(): Promise<QueueView | null> {
+  try {
+    const res = await fetch("/api/queue", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as QueueView;
+  } catch {
+    return null;
+  }
+}
+
+export async function removeQueued(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/queue/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return res.ok || res.status === 204;
+  } catch {
+    return false;
+  }
+}
+
+export interface SettingsView {
+  output_dir: string;
+  model: string;
+  workdir: string;
+}
+
+export async function getSettings(): Promise<SettingsView | null> {
+  try {
+    const res = await fetch("/api/settings", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as SettingsView;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSettings(patch: {
+  output_dir?: string;
+  model?: string;
+}): Promise<{ error?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) return { error: body.error || `HTTP ${res.status}` };
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Interface a native shell exposes; absent in a plain browser. */
+export interface ShellBridge {
+  PickFiles?: () => Promise<string[]>;
+  OpenFolder?: (path: string) => Promise<void>;
+}
+
+export function shell(): ShellBridge | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { go?: { main?: { App?: ShellBridge } } }).go?.main?.App ?? null;
+}
+
 /** Formats mm:ss from milliseconds; used by the library table. */
 export function formatDuration(ms: number): string {
   if (!ms || ms <= 0) return "—";

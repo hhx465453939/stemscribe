@@ -10,6 +10,7 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/engine"
@@ -33,6 +34,9 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 	// One installer per handler: installs are serialised, because a second concurrent
 	// download of the same artifact would corrupt the shared .part file.
 	inst := runctl.NewInstaller()
+	// The queue shares the same runner as single runs, so progress and results come
+	// from one place (ADR-027).
+	q := runctl.NewQueue(svc)
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
@@ -140,6 +144,102 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]string{"id": jobID})
+	})
+
+	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
+		settings, layout, err := runctl.LoadSettings(workdir)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, map[string]any{
+				"output_dir": settings.OutputDir,
+				"model":      settings.Stages.Whisper,
+				"workdir":    settings.Workdir,
+			})
+		case http.MethodPut:
+			var body struct {
+				OutputDir *string `json:"output_dir"`
+				Model     *string `json:"model"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+				return
+			}
+			if body.OutputDir != nil {
+				// Refuse a path that cannot be created rather than failing at run time with
+				// the work already half done.
+				dir := strings.TrimSpace(*body.OutputDir)
+				if dir != "" {
+					if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+						writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot use that folder: " + mkErr.Error()})
+						return
+					}
+				}
+				settings.OutputDir = dir
+			}
+			if body.Model != nil {
+				settings.Stages.Whisper = *body.Model
+			}
+			if err := layout.Save(settings); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"output_dir": settings.OutputDir, "model": settings.Stages.Whisper})
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use GET or PUT"})
+		}
+	})
+
+	mux.HandleFunc("/api/queue", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, q.Snapshot())
+		case http.MethodPost:
+			var req struct {
+				Inputs    []string          `json:"inputs"`
+				OutputDir string            `json:"output_dir"`
+				Model     string            `json:"model"`
+				Params    map[string]string `json:"params"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+				return
+			}
+			params, err := ParamsFromMap(req.Params)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			added, rejected := q.Enqueue(req.Inputs, runctl.Options{
+				ModelID:   req.Model,
+				Params:    params,
+				OutputDir: req.OutputDir,
+				Engine:    "auto",
+				DurationMS: 30000,
+			})
+			writeJSON(w, http.StatusAccepted, map[string]any{"added": len(added), "total": q.Snapshot().Total, "rejected": rejected})
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use GET or POST"})
+		}
+	})
+
+	mux.HandleFunc("/api/queue/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/api/queue/")
+		if r.Method != http.MethodDelete || id == "" {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use DELETE /api/queue/{id}"})
+			return
+		}
+		switch err := q.Remove(id); err {
+		case nil:
+			w.WriteHeader(http.StatusNoContent)
+		case runctl.ErrQueueRunning:
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		default:
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
 	})
 
 	mux.HandleFunc("/api/capabilities", func(w http.ResponseWriter, r *http.Request) {
