@@ -281,7 +281,15 @@ func AlignRepair(segs []Segment) []Segment {
 			s.LowConf = true
 		}
 		// Fix 1: merge a dangling fragment into the previous segment.
-		if len(out) > 0 && isDangling(out[len(out)-1]) && len([]rune(s.Text)) < DanglingMaxRunes {
+		//
+		// The accumulated length must be bounded. isDangling already stops a merge
+		// after sentence-final punctuation, but Chinese speech often runs tens of
+		// seconds without any, so an unbounded append glued a whole paragraph onto one
+		// line: measured median 32 / p90 96 / max 328 runes on a 30-minute episode,
+		// which cannot be used as subtitles. whisper itself emits ~10-rune fragments,
+		// so the ceiling has to be applied here, not in the engine flags.
+		if len(out) > 0 && isDangling(out[len(out)-1]) && len([]rune(s.Text)) < DanglingMaxRunes &&
+			len([]rune(out[len(out)-1].Text))+len([]rune(s.Text)) <= MaxMergedRunes {
 			prev := &out[len(out)-1]
 			prev.Text = strings.TrimSpace(prev.Text + s.Text)
 			prev.EndMS = s.EndMS
@@ -302,6 +310,14 @@ const LowConfidenceThreshold = 0.45
 
 // DanglingMaxRunes is the upper bound for a fragment worth merging upstream.
 const DanglingMaxRunes = 12
+
+// MaxMergedRunes caps how long a merged segment may become.
+//
+// 40 runes is the point where a Chinese subtitle line still reads as one line on a
+// phone at the UI-DESIGN type scale, and it is above the 20-30 rune target in the
+// PRD so ordinary sentences survive intact. Without this ceiling a single line grew
+// to 328 runes (see docs/GAP-ANALYSIS.md §1).
+const MaxMergedRunes = 40
 
 // HallucinationRepeatCount is how many near-identical neighbours count as a loop.
 const HallucinationRepeatCount = 3

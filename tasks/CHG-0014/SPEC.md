@@ -70,4 +70,6 @@ CHG-0008 的 AC-02 要求 `paramSpecs` 的默认值等于 `whisper-cli --help` �
 | `frontend/app/components/NewTask.tsx`（基线参数合并） | CHG-0014 |
 | `frontend/lib/i18n.ts`、`frontend/lib/api.ts` | CHG-0014 |
 | `scripts/verify-lines.py`（AC-01/AC-02 的验证工具） | CHG-0014 |
+| `internal/pipeline/pipeline.go`、`internal/pipeline/align_merge_test.go`（**跨界**） | CHG-0014（归属 CHG-0008；同批登记理由：AC-01 的行宽上限只能在 align 合并处实现） |
+| `docs/PIPELINE.md` §4.3（补上合并上限） | CHG-0014 |
 | `docs/{GAP-ANALYSIS,PIPELINE}.md`、`tasks/README.md` | CHG-0014 |
