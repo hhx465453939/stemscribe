@@ -17,15 +17,29 @@ import {
 const PARAMS_KEY = "stemscribe.params";
 const POLL_MS = 500;
 
-/** Reads the parameter page's own storage, so there is exactly one source of truth. */
+// Subtitle-friendly baseline for runs started from the UI.
+//
+// The engine's own default is max_len=0 (no limit), which merged whole sentences into
+// 15-second paragraphs that cannot be used as subtitles. The spec default stays 0
+// because it must match `whisper-cli --help` (CHG-0008 AC-02); this baseline belongs
+// to our usage, not to the engine. An explicit value on the parameter page wins.
+const RUN_BASELINE: Record<string, string> = {
+  max_len: "30",
+  split_on_word: "true",
+};
+
+/** Reads the parameter page's storage and layers it over the run baseline. */
 function readParams(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(PARAMS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-  } catch {
-    return {};
+  let user: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem(PARAMS_KEY);
+      if (raw) user = JSON.parse(raw) as Record<string, string>;
+    } catch {
+      user = {};
+    }
   }
+  return { ...RUN_BASELINE, ...user };
 }
 
 export function NewTask() {
@@ -164,8 +178,10 @@ export function NewTask() {
         </div>
 
         <div className="row" style={{ gap: "var(--sp-6)", flexWrap: "wrap" }}>
-          <label className="row" style={{ gap: "var(--sp-2)", flex: "1 1 320px" }}>
-            <span className="mono muted">{t("task.outputDir")}</span>
+          <label className="row" style={{ gap: "var(--sp-2)", flex: "1 1 320px", minWidth: 0 }}>
+            <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t("task.outputDir")}
+            </span>
             <input
               className="input"
               value={outputDir}
@@ -176,7 +192,9 @@ export function NewTask() {
           </label>
 
           <label className="row" style={{ gap: "var(--sp-2)" }}>
-            <span className="mono muted">{t("task.model")}</span>
+            <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t("task.model")}
+            </span>
             <select
               className="input"
               value={model}
@@ -189,6 +207,12 @@ export function NewTask() {
                   {m.name || m.id}
                 </option>
               ))}
+              {/* The configured model may not be installed. Showing a blank control made
+                  it look broken; naming it explains why the run will substitute another
+                  model (the backend does exactly that and logs MODEL_SUBSTITUTED). */}
+              {model !== "" && !installed.some((m) => m.id === model) ? (
+                <option value={model}>{`${model} · ${t("task.modelMissing")}`}</option>
+              ) : null}
             </select>
           </label>
 

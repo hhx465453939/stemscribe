@@ -302,6 +302,16 @@ func ParamsFromMap(m map[string]string) (engine.WhisperParams, error) {
 			p.Threads = n
 		case "vad":
 			p.VAD = v == "true"
+		case "max_len":
+			// Line length drives whether the output is readable as subtitles. Accepted here
+			// so the UI baseline and an explicit user choice travel the same validated path.
+			n, err := atoi(v)
+			if err != nil {
+				return p, err
+			}
+			p.MaxLen = n
+		case "split_on_word":
+			p.SplitOnWord = v == "true"
 		case "initial_prompt":
 			p.InitialPrompt = v
 		default:
