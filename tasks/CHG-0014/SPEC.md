@@ -57,7 +57,7 @@ CHG-0008 的 AC-02 要求 `paramSpecs` 的默认值等于 `whisper-cli --help` �
 | AC | 判据 | 验证 |
 |---|---|---|
 | AC-01 | 用同一视频（01）重跑，输出行宽中位数 ≤ 40 个汉字（此前 15 秒/段、整段上百字） | 读 `transcript.md` 统计 |
-| AC-02 | 参数页把 `max_len` 改成 0 后，跑出来回到长段（证明用户值优先、未被基线覆盖） | 两次运行对比 |
+| AC-02 | 用户显式值确实到达引擎：`max_len=30` 时产物 `params_snapshot` 含该键，`max_len=0` 时不含；且 `align` 的 40 字上限作为**独立不变量**始终成立 | 两次运行对比 + 读 `meta.json` |
 | AC-03 | `whisper-medium` 在 registry 中不再 `tbd`，`sha256` 为实测值，体积 = `1533763059` | 读 registry + 安装成功 |
 | AC-04 | 双语无硬编码、`i18n-check` 通过 | `scripts/i18n-check.sh` |
 
