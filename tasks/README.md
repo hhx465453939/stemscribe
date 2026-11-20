@@ -19,6 +19,7 @@
 | CHG-0011 | Provisioning（从界面安装模型与运行时） | **approved** | `internal/runctl/install.go`、`cmd/stemscribe/install.go`、`internal/webapi/handler.go`（仅新增 install 路由）、`frontend/app/models/page.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{MODEL-REGISTRY,UI-DESIGN}.md`、`tasks/README.md` | 0002、0010 |
 | CHG-0012 | Multi-file Intake & Run Queue（多文件录入 + 串行队列） | **approved**（M3 拖入未交付） | `internal/runctl/queue.go`、`internal/webapi/handler.go`（queue 路由）、`cmd/stemscribe-gui/main_gui.go`、`frontend/app/components/NewTask.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{PIPELINE,UI-DESIGN}.md`、`tasks/README.md` | 0010 |
 | CHG-0013 | UX Essentials（审计 P0：参数生效/输出目录/浏览/打开产物） | **approved** | `internal/config/config.go`、`internal/runctl/run.go`、`internal/webapi/handler.go`、`cmd/stemscribe-gui/main_gui.go`、`frontend/app/components/NewTask.tsx`、`frontend/lib/{api,i18n}.ts`、`docs/{UX-AUDIT,UI-DESIGN}.md`、`tasks/README.md` | 0010、0011、0012 |
+| CHG-0014 | Transcript Quality Baseline（阶段 A1+A2：可用模型 + 句级切分） | **approved** | `internal/registry/data/registry.json`、`internal/webapi/handler.go`、`frontend/app/components/NewTask.tsx`、`frontend/lib/{api,i18n}.ts`、`internal/pipeline/pipeline.go` + `align_merge_test.go`（**跨界**，归 CHG-0008）、`scripts/verify-lines.py`、`docs/{GAP-ANALYSIS,PIPELINE}.md`、`tasks/README.md` | 0002、0010、0012、0013 |
 
 > `planned` 的 CHG 目录尚未创建。开工时复制 `CHG-0001/` 结构并改写内容，然后把 status 从 `draft` 提到 `approved`。
 
