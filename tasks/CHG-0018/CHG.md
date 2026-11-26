@@ -4,7 +4,7 @@
 
 在 CHG-0017（MDX-Net 分离真正跑上 CUDA）验收后，owner 定的下一阶段：
 **把分离模型族扩起来，并把 Demucs / 模型权重 / 项目适配做成最大化的深度嵌入**。
-截至 2026-11-27：M1–M4 与 M6 参数面已落地并实测；M5（模型中心展示）已实现、待截图核对；
+截至 2026-11-27：M1–M6 中 M1–M5 与 M6 参数面已落地并实测（M5 双主题截图核对完成）；
 M6 的显存校准/热启动与长期基准文档未做，如实列在「下一步」。
 
 ## 状态流
@@ -15,6 +15,7 @@ M6 的显存校准/热启动与长期基准文档未做，如实列在「下一�
 | 2026-11-26 | in_progress | owner「开工」；M1 可行性实测通过（见下节），进入 M2 | agent |
 | 2026-11-26 | in_progress | M2 torch 运行时档跑通并取证（就地升级 + 生产 venv Demucs + MDX 回归） | agent |
 | 2026-11-27 | in_progress | M3 8 条模型入库、M4 多轨全链路、M6 参数面全部实测通过；M5 模型中心展示实现 | agent |
+| 2026-11-27 | in_progress | M5 双主题截图核对通过；Checkfix/redact/secrets 全绿；清理本轮测试产物约 7.8 GB | agent |
 
 ## 预研结论（2026-11-26 实测）
 
@@ -75,6 +76,16 @@ M6 的显存校准/热启动与长期基准文档未做，如实列在「下一�
 | 转写 | 输入仍是 `vocals16k.wav`，契约未变（4 轨集 11 段） |
 | 恢复 | 改参数 → `resume: separate: parameters changed` 重跑；原样重跑全部 skipped |
 
+## M5 模型中心展示（2026-11-27，详见 tmp/evidence/chg0018/M5-UI.md）
+
+| 项 | 结果 |
+|---|---|
+| 架构/轨数 | 每行「分离 · Demucs / MDX-Net / VR」+ 轨数徽章（4/6/2），数据取自 registry 的 `architecture`/`stems` |
+| 体积/显存/许可 | 多文件模型显示合计体积（81/322/53 MB）；显存 3800/2300/1800 MB；NC 模型 `CC-BY-NC-4.0` + 红框「非商用」 |
+| 选择 | 「设为分离模型」写 `settings.separator`；当前模型显示「当前分离模型」 |
+| 运行时 | venv 行同时出现 `CUDA` 与 `torch CUDA` 徽章，与 `INSTALLED.json` 一致 |
+| 双主题 | `?theme=light|dark` 各截一张（`m5-models-light.png` / `m5-models-dark.png`），红标/边框/次级文字两主题下均可辨认 |
+
 ## M6 参数面（2026-11-27，详见 tmp/evidence/chg0018/M6-PARAMS.md）
 
 | 项 | 结果 |
@@ -109,6 +120,8 @@ M6 的显存校准/热启动与长期基准文档未做，如实列在「下一�
 
 ## 下一步
 
-1. M5 收尾：模型中心的架构/轨数/非商用标记已落地，截图与双主题核对。
+1. ~~M5 收尾~~ 已完成：模型中心展示 + 双主题截图核对（见 M5 节与 M5-UI.md）。
 2. M6 剩余：显存校准、热启动常驻 helper、`docs/SEPARATION-BENCH.md`。
 3. T7：Checkfix 全绿、redact/secrets 扫描、按里程碑提交；push 待 owner 明确授权。
+4. 测试产物清理：已删 `tmp/{demucs-venv,demucs-cpu-venv,models-src,demucs-weights,demucs-out,build}`（约 7.8 GB）；
+   `tmp/wheels` 与 `tmp/fresh-workdir` 等安装取证跑完再删；`dist/workdir` 是运行数据，不动。
