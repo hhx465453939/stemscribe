@@ -18,6 +18,7 @@ M6 的显存校准与热启动常驻 helper 经核查属架构性改动（调度
 | 2026-11-27 | in_progress | M3 8 条模型入库、M4 多轨全链路、M6 参数面全部实测通过；M5 模型中心展示实现 | agent |
 | 2026-11-27 | in_progress | M5 双主题截图核对通过；Checkfix/redact/secrets 全绿；清理本轮测试产物约 7.8 GB | agent |
 | 2026-11-27 | in_progress | `docs/SEPARATION-BENCH.md` 落地（只汇总 M1/M2 实测，未测项显式标注）；显存校准与热启动转列后续 CHG | agent |
+| 2026-11-27 | in_progress | 全新 venv 三组补测（无模型 / 有 Demucs）+ PyPI 索引链：官方文件主机 37–48 KB/s，改阿里云优先（3 MB/s），回退测试可红 | agent |
 
 ## 预研结论（2026-11-26 实测）
 
@@ -43,7 +44,7 @@ M6 的显存校准与热启动常驻 helper 经核查属架构性改动（调度
 
 结论：torch 部分可行，PRD/SPEC 的 M2–M6 不再冻结。
 
-## M2 运行时 torch 档（2026-11-26，详见 tmp/evidence/chg0018/M2-RUNTIME-TORCH.md）
+## M2 运行时 torch 档（2026-11-26，2026-11-27 补测全新 venv 与索引链）
 
 | 项 | 结果 |
 |---|---|
@@ -53,6 +54,8 @@ M6 的显存校准与热启动常驻 helper 经核查属架构性改动（调度
 | 生产 venv Demucs | 30 s 素材 17.14 s，`SEP_TORCH_DEVICE cuda`，4 轨 |
 | MDX 回归 | `backend=cuda12`，CUDA provider 仍激活，两轨正常 |
 | 探针拆分 | ONNX 会话与 torch 必须分进程探测，否则 torch 报 cudnn WinError 127（见证据） |
+| 全新 venv（补测） | 三组：无模型 → `accel=cuda12` + `torch=cpu 2.15.0+cpu`（按需设计，非降级）；有 Demucs 模型 → 先 SJTU 装 `torch 2.14.1+cu126` 再装 audio-separator，`torch=cuda` |
+| PyPI 索引链（补测） | 官方文件主机实测 37–48 KB/s（203 MB 单个 wheel 需 70–85 分钟），阿里云 3 MB/s；改为 阿里云 → 官方（`STEMSCRIBE_PYPI_INDEX` 可覆盖），逐索引重试并记录失败原因 |
 
 3. 架构事实：MDX-Net 走 ONNX（CHG-0017 已 GPU）；VR/Demucs/MDX23C/Roformer 走 torch，
    PyPI 的 Windows torch 是 CPU 版——这正是这些架构现在必然跑 CPU 的原因。

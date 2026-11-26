@@ -51,6 +51,25 @@ type SeparatorInstallOptions struct {
 	Torch bool
 }
 
+// pypiIndexes is the ordered list of indexes for the ordinary PyPI packages
+// (audio-separator, onnxruntime-gpu, the nvidia-* wheels, audioread).
+//
+// Measured 2026-11-27 from this network: pypi.org answers the JSON API in under
+// a second, but its file host served the 203 MB onnxruntime-gpu wheel at ~40 KB/s
+// -- one wheel alone would take over an hour, and a first install pulls well
+// past that. The Aliyun mirror served the same wheel at ~3 MB/s. The official
+// index stays last so a machine that cannot reach the mirror still installs.
+// An explicit override wins, same as STEMSCRIBE_TORCH_INDEX.
+func pypiIndexes() []string {
+	if v := strings.TrimSpace(os.Getenv("STEMSCRIBE_PYPI_INDEX")); v != "" {
+		return []string{v}
+	}
+	return []string{
+		"https://mirrors.aliyun.com/pypi/simple/",
+		"https://pypi.org/simple/",
+	}
+}
+
 // torchIndexes is the ordered list of package indexes serving the cu126 wheels.
 //
 // Measured 2026-11-26 from this network: all three answer, SJTU answers the
@@ -259,16 +278,8 @@ func InstallSeparatorRuntime(ctx context.Context, layout config.Layout, opts Sep
 
 		packages := separatorPackages(desired)
 		logf("installing %s", strings.Join(packages, " "))
-		if useUV {
-			args := append([]string{"pip", "install", "--python", python}, packages...)
-			if err := runLogged(ctx, onProgress, "uv", args...); err != nil {
-				return Installed{}, fmt.Errorf("install %s: %w", strings.Join(packages, " "), err)
-			}
-		} else {
-			args := append([]string{"-m", "pip", "install"}, packages...)
-			if err := runLogged(ctx, onProgress, python, args...); err != nil {
-				return Installed{}, fmt.Errorf("install %s: %w", strings.Join(packages, " "), err)
-			}
+		if err := installPyPIPackages(ctx, python, useUV, packages, onProgress, logf); err != nil {
+			return Installed{}, err
 		}
 	}
 
@@ -329,6 +340,50 @@ func InstallSeparatorRuntime(ctx context.Context, layout config.Layout, opts Sep
 		ID: engine.SeparatorRuntimeID, Kind: "runtime", Version: version,
 		SourceURL: "https://pypi.org/project/audio-separator/", DestDir: venv,
 	}, nil
+}
+
+// installPyPIPackages installs the separator packages from pypiIndexes in order.
+// See installFromIndexes for the retry rule.
+func installPyPIPackages(ctx context.Context, python string, useUV bool, packages []string, onProgress func(Progress), logf func(string, ...any)) error {
+	return installFromIndexes(ctx, python, useUV, packages, pypiIndexes(), onProgress, logf)
+}
+
+// installFromIndexes installs packages, trying each index until one succeeds.
+//
+// A mirror can answer the index and then refuse or fail mid-resolution, so the
+// attempt is retried on the next index and every failure is logged with the
+// package manager's last line -- the same rule as installTorchCUDA: the user sees
+// which index was tried, and nothing silently degrades. Packages already fetched
+// from a failed attempt stay in the uv cache, so the retry only re-downloads what
+// is still missing.
+func installFromIndexes(ctx context.Context, python string, useUV bool, packages, indexes []string, onProgress func(Progress), logf func(string, ...any)) error {
+	var failures []string
+	for _, index := range indexes {
+		logf("resolving from %s", index)
+		var tail string
+		var err error
+		if useUV {
+			args := append([]string{"pip", "install", "--python", python,
+				"--default-index", index}, packages...)
+			tail, err = runLoggedTail(ctx, onProgress, "uv", args...)
+		} else {
+			args := append([]string{"-m", "pip", "install", "-i", index}, packages...)
+			tail, err = runLoggedTail(ctx, onProgress, python, args...)
+		}
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if tail == "" {
+			tail = err.Error()
+		}
+		failures = append(failures, index+": "+tail)
+		logf("WARNING %s failed (%s); trying the next index", index, tail)
+	}
+	return fmt.Errorf("could not install %s from any index:\n  %s",
+		strings.Join(packages, " "), strings.Join(failures, "\n  "))
 }
 
 // installTorchCUDA replaces the CPU PyTorch wheel with the CUDA 12 build.

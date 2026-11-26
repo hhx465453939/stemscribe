@@ -1,8 +1,12 @@
 package runctl
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -108,6 +112,101 @@ func TestTorchIndexesHonourOverride(t *testing.T) {
 	if !strings.Contains(torchPackage, "+cu") || !strings.Contains(torchvisionPackage, "+cu") {
 		t.Fatalf("torch pins must be CUDA wheels, got %q / %q", torchPackage, torchvisionPackage)
 	}
+}
+
+func TestPyPIIndexesHonourOverride(t *testing.T) {
+	t.Setenv("STEMSCRIBE_PYPI_INDEX", "https://example.org/simple/")
+	got := pypiIndexes()
+	if len(got) != 1 || got[0] != "https://example.org/simple/" {
+		t.Fatalf("pypiIndexes = %v, want the explicit override only", got)
+	}
+	t.Setenv("STEMSCRIBE_PYPI_INDEX", "  ")
+	got = pypiIndexes()
+	if len(got) < 2 {
+		t.Fatalf("pypiIndexes = %v, want a mirror plus the official fallback", got)
+	}
+	if got[len(got)-1] != "https://pypi.org/simple/" {
+		t.Fatalf("last index = %q, want the official PyPI index so an offline mirror never blocks the install", got[len(got)-1])
+	}
+}
+
+// TestMain doubles as a fake `uv`: TestInstallPyPIPackagesFallsBack stages a copy
+// of this test binary on PATH under the name uv, and that copy takes the fakeUV
+// branch instead of running tests.
+func TestMain(m *testing.M) {
+	if os.Getenv("STEMSCRIBE_FAKE_UV") == "1" {
+		fakeUV()
+	}
+	os.Exit(m.Run())
+}
+
+// fakeUV answers like a package index that refuses one host and accepts another:
+// the first index in the test fails with a message, the fallback exits 0.
+func fakeUV() {
+	args := strings.Join(os.Args[1:], " ")
+	if strings.Contains(args, "bad.invalid") {
+		fmt.Fprintln(os.Stderr, "error: could not reach bad.invalid")
+		os.Exit(1)
+	}
+	fmt.Println("installed fake package")
+	os.Exit(0)
+}
+
+// The retry is the safety property behind the mirror-first order: an index that
+// answers and then fails must not leave the user without a runtime.
+func TestInstallPyPIPackagesFallsBackToNextIndex(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate the test binary: %v", err)
+	}
+	dir := t.TempDir()
+	name := "uv"
+	if runtime.GOOS == "windows" {
+		name = "uv.exe"
+	}
+	fake := filepath.Join(dir, name)
+	if err := copyExecutable(self, fake); err != nil {
+		t.Fatalf("stage the fake uv: %v", err)
+	}
+
+	t.Setenv("STEMSCRIBE_FAKE_UV", "1")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var lines []string
+	logf := func(format string, args ...any) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}
+	err = installFromIndexes(context.Background(), "python", true, []string{"pkg"},
+		[]string{"https://bad.invalid/simple/", "https://good.invalid/simple/"}, nil, logf)
+	if err != nil {
+		t.Fatalf("installFromIndexes must retry the next index, got %v (log: %v)", err, lines)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "bad.invalid") || !strings.Contains(joined, "trying the next index") {
+		t.Fatalf("the failed index must be reported, log was:\n%s", joined)
+	}
+	if !strings.Contains(joined, "good.invalid") {
+		t.Fatalf("the fallback index was never attempted, log was:\n%s", joined)
+	}
+}
+
+// copyExecutable copies src to dst with the executable bit set. Copying the test
+// binary keeps the fake uv free of any build step or shell wrapper.
+func copyExecutable(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func TestDescribeTorchFailure(t *testing.T) {

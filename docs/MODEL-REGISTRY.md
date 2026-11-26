@@ -166,6 +166,10 @@ Demucs 的 YAML 决定入口文件：`{ "models": ["955717e8"] }` 经前缀匹�
 - `audioread` 必须显式列出。`audio-separator` 的 `uvr_lib_v5` 在 import 时就需要它，
   但其包元数据已不再声明（librosa 1.x 去掉了这个依赖），干净 venv 会在 import 阶段
   `ModuleNotFoundError`。
+- 普通 PyPI 包按阿里云镜像 → 官方索引的顺序尝试（`STEMSCRIBE_PYPI_INDEX` 可覆盖，与
+  `STEMSCRIBE_TORCH_INDEX` 同理）。实测（2026-11-27，本机）：`pypi.org` 索引 0.8 s 响应，
+  但 `files.pythonhosted.org` 下发 203 MB 的 `onnxruntime-gpu` 只有约 40 KB/s（单个 wheel
+  要 85 分钟）；阿里云镜像同一文件约 3 MB/s。每个索引的失败原因都会写进安装日志，不静默跳过。
 
 两种 ONNX Runtime 发行包互斥，安装前会卸载另一支。装完用 **Identity 小模型真跑一次
 `CUDAExecutionProvider` 会话**，只有 session 实际激活 CUDA 才写 `accel=cuda12`；
