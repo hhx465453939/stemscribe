@@ -121,7 +121,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	srcAudio, err := b.Path("audio/vocals.wav")
+	srcAudio, err := b.Path("audio/vocals16k.wav")
 	if err != nil {
 		return res, err
 	}
@@ -160,6 +160,9 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 			full, _ := b.Path("audio/full.wav")
 			stageErr = r.Engine.Separate(ctx, full, vocals, instr, req.SeparateOpts)
 		case store.StageTranscribe:
+			// Transcribe the 16 kHz copy of the separated vocals. Falling back to the
+			// source's 16k.wav happens only when separation did not run (the synthetic
+			// test double); a real run with a missing vocals track fails earlier.
 			in := srcAudio
 			if _, statErr := os.Stat(in); statErr != nil {
 				in = fallbackAudio

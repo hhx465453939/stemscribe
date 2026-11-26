@@ -10,8 +10,8 @@
 | 2 | `download` | SourceMeta | `source/video.mp4`（或本地引用） | resolve | 本地文件 | 视网速 |
 | 3 | `probe` | video | `{duration_ms, streams, sample_rate}` | download | — | < 1 s |
 | 4 | `demux` | video | `audio/full.wav`(44.1k st) + `audio/16k.wav`(16k mono) | probe | — | ~20 s |
-| 5 | `separate` | full.wav | `audio/vocals.wav` + `audio/instrumental.wav` | demux | ✅ 可关（直接转写 full） | ~2–4 min |
-| 6 | `transcribe` | vocals.wav 或 16k.wav | `text/transcript.json` + `.srt`/`.vtt`/`.md` | separate（或 demux） | — | ~4–6 min |
+| 5 | `separate` | full.wav | `audio/vocals.wav` + `audio/instrumental.wav` + `audio/vocals16k.wav` | demux | ❌ **强制**（ADR-037，仅 synthetic 测试引擎除外） | 30 s 实测 ~15 s；30 min 整集实测 18 min 58 s（CPU，RTF ≈0.63） |
+| 6 | `transcribe` | vocals16k.wav（分离后）或 16k.wav（synthetic） | `text/transcript.json` + `.txt`/`.srt`/`.vtt`/`.md` | separate（或 demux） | — | large-v3 见 `GAP-ANALYSIS.md` |
 | 7 | `align` | transcript + 段落边界 | 修正后的 transcript（句子合并、低置信度标记） | transcribe | ✅ 无分离时跳过交叉段修复 | < 2 s |
 | 8 | `polish` | transcript.md | `text/polished.md` + `text/outline.md` | align | ✅ 默认关 | 视 provider |
 | 9 | `export` | 以上全部 | 见 `MODEL-REGISTRY.md` §bundle、`meta.json` 定稿 | 全部 | — | < 1 s |
@@ -21,11 +21,10 @@
 ## 2. DAG
 
 ```
-resolve ──► download ──► probe ──► demux ──┬─► separate ─┐
-                                            └─────────────┴─► transcribe ──► align ──► polish ──► export
+resolve ──► download ──► probe ──► demux ──► separate ──► transcribe ──► align ──► polish ──► export
 ```
 
-**并行点**（v0.2）：`demux` 后可同时产出两路（分离 + 16k 直转），UI 层让用户选"质量优先"（走分离）或"速度优先"（跳过分离）。
+`separate` 是**必经阶段**（ADR-037）：真实引擎永远先抽人声再转写，缺运行时/模型直接失败并给出安装命令，不存在"跳过分离、直接转写原声"的分支。唯一例外是 `--engine synthetic` 测试替身（它不读音频）。
 
 **批量的并行度**：任务级并发由 `resource` 预算决定，默认 `max_concurrent = floor(预算 / 单任务峰值)`，且硬上限 `min(2, NumGPU)`。单 GPU 上转写与分离**不同时跑**（避免争显存），排队串行。
 
@@ -40,7 +39,7 @@ runctl.Service.Start(opts) ──► goroutine ──► Run() ──► pipelin
 ```
 
 **进度不是估算的**（ADR-023）：分子 = 已 `stage.end` 或已被 checkpoint 判定有效的 `stage.skip`；
-分母 = 本次**启用**的阶段数（`separate` 关闭、`polish` 恒关时不计）。
+分母 = 本次**启用**的阶段数（真实运行含 `separate`；`polish` 恒关；仅 synthetic 不计 `separate`）。
 因此进度条可能**回跳前先停**，但绝不会跑在工作前面。
 
 `stage.skip` 有两种语义，必须区分：
@@ -96,9 +95,17 @@ for stage in DAG:
 
 ### 4.1 分离分段
 
-- 段长默认 15 s，重叠 2 s，边缘线性交叉淡化（crossfade）。
-- 段长与显存联动：`resource` 预算不足时自动降到 8 s（并在 UI 提示 `分段 8s（显存自适应）`）。
-- 输出拼接后做**响度归一化**（`-14 LUFS`，可配 `-23` 广播标准），避免不同段音量跳变。
+分离走**外置 Python 进程**（`audio-separator`，UVR5 推理栈；ADR-002/ADR-038），Go 只负责编排：
+
+- 输入：`audio/full.wav`（44.1 kHz 立体声，demux 一次 ffmpeg 同时产出 44.1k 与 16k）。
+- 模型：`uvr-mdx-kim-vocal-2`（Kim Vocal 2，MDX-NET，注册表实测 sha256；CPU onnxruntime）。
+- 元数据：`download_checks.json` / `mdx_model_data.json` / `vr_model_data.json` 随程序内嵌，
+  首次运行落到 `runtimes/separator/meta/` 并复制到模型目录——`audio-separator` 原本从
+  raw.githubusercontent.com 拉取，而目标网络只通 hf-mirror，不内嵌会直接连接失败。
+- 输出：`vocals.wav`、`instrumental.wav`；随后 ffmpeg 把 vocals 转成 16 kHz 单声道
+  `vocals16k.wav` 交给 whisper（44.1k 立体声直接喂 whisper 会变速，不是音质问题）。
+- 分段/交叉淡化由 `audio-separator` 内部完成；`SeparateOptions.SegmentSecs` 目前只做参数占位，
+  未参与计算（实测 30 s 素材 ~15 s，RTF ≈0.5，CPU）。
 
 ### 4.2 转写切片
 
@@ -128,7 +135,7 @@ for stage in DAG:
 {"ts":"...","ev":"stage.end","stage":"download","ok":true,"elapsed_ms":52400,"outputs":["source/video.mp4"]}
 {"ts":"...","ev":"engine.spawn","engine":"whisper.cpp","pid":12044,"backend":"cuda12","model":"ggml-medium-q5_0.bin"}
 {"ts":"...","ev":"stage.warn","stage":"align","code":"HALLUCINATION_DROPPED","count":3}
-{"ts":"...","ev":"stage.retry","stage":"transcribe","attempt":2,"reason":"ENGINE_OOM","action":"downgrade:small"}
+{"ts":"...","ev":"stage.warn","stage":"transcribe","code":"MODEL_SUBSTITUTED","note":"whisper-large-v3 ran out of memory; retried with whisper-medium"}
 {"ts":"...","ev":"task.end","ok":false,"code":"DL_403","hint":"视频可能已删除或需要登录"}
 ```
 
@@ -141,7 +148,7 @@ for stage in DAG:
 | `DL_403` / `DL_404` | 视频删除 / 会员专享 / 风控 | 不重试，标失败 | 「该视频无法下载（可能已删除或需登录）」 |
 | `DL_NET` | 网络中断 | 退避重试 3 次 | 「网络不稳定，已重试 3 次」 |
 | `FS_DISK_FULL` | 磁盘满 | 不重试，暂停队列 | 「磁盘剩余 1.2 GB，预计需要 3.4 GB」 |
-| `ENGINE_OOM` | 显存不足 | **降档一次**再重试（large→medium→small→cpu） | 「显存不足，已自动降档到 small」 |
+| `ENGINE_OOM` | 显存不足 | **自动降一档**并重试一次（large-v3→medium→small→base→tiny，只选已安装的），写 `MODEL_SUBSTITUTED` | 「显存不足，已自动换用 <模型>」 |
 | `ENGINE_CRASH` | 引擎崩溃 | 重启一次；再崩则失败 | 「转写引擎异常退出，已保存进度」 |
 | `ENGINE_BAD_OUTPUT` | 协议行非法 | 跳过该行继续；>10 行则失败 | 「引擎输出异常」 |
 | `LLM_AUTH` | key 无效 | 不重试，跳过润色继续导出 | 「润色未完成（API Key 无效），逐字稿已保存」 |
@@ -166,7 +173,7 @@ for stage in DAG:
 ffmpeg -f lavfi -i "sine=frequency=440:duration=2" -f lavfi -i "sine=frequency=880:duration=2" \
        -filter_complex "[0][1]concat=n=2:v=0:a=1,apad=pad_dur=26" -ar 16000 -ac 1 tests/fixtures/tone30.wav
 
-stemscribe-cli run --input tests/fixtures/tone30.wav --skip separate --no-polish --workdir .\tmp\e2e
+stemscribe-cli run --input tests/fixtures/tone30.wav --engine synthetic --workdir .\tmp\e2e
 # 断言
 #  1) tmp/e2e/libraries/<id>/meta.json 存在且 stages 全 ok
 #  2) text/transcript.json 是数组、length>0、start 严格递增

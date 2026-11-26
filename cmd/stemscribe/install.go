@@ -63,11 +63,17 @@ func installOne(id string, rest []string) int {
 			fmt.Printf("  from %s\n", p.SourceURL)
 		case "verify":
 			fmt.Println()
+			if p.SHA256 == "" {
+				fmt.Printf("  installed version %s\n", p.Version)
+				break
+			}
 			shown := p.SHA256
 			if len(shown) > 12 {
 				shown = shown[:12]
 			}
 			fmt.Printf("  verified sha256 %s\n", shown)
+		case "log":
+			fmt.Printf("  %s\n", p.Note)
 		default:
 			if p.TotalMB > 0 {
 				fmt.Printf("  %3d%%  %d/%d MB\n", p.Percent, p.DoneMB, p.TotalMB)

@@ -16,7 +16,7 @@
 | 实测基线（tiny, 30min, RTF 0.058, 163 段） | ✅ | `docs/GAP-ANALYSIS.md` §1 |
 | AC-01 句级切分 | ✅ | 同一集 30 min 视频实测：修复前 163 段 / median 32 / p90 96 / **max 328**；修复后 **283 段 / median 32 / p90 39 / max 40，超 40 字的行 = 0**。根因是 align 合并无上限，不是 `max_len` |
 | AC-02 用户值优先 | ✅ | 实测：`max_len=30` 的产物 `params_snapshot` 含 `max_len:"30"`；`max_len=0` 的不含（=默认值不发）。注：本 AC 原写明“改为 0 就回到长段”，该描述在 `align` 固定上限落地后**已不可成立**（且不应成立：长段就是本次要消除的缺陷），故改为验证“值到达引擎”加“上限作为独立不变量” |
-| AC-03 medium sha256 | ⛔ 外部阻塞 | `ggml-medium.bin` 下载中 **603 MB / 1462.7 MB**（≈190 KB/s，多次断流已加重试）。未下完就无法算 sha256，故 registry 仍为 `tbd`、仍拒装。**这不是交付，是阻塞** |
+| AC-03 medium sha256 | ✅ | 2026-11-26 下载完成并实测：**1,533,763,059 B**（与 registry `size` 一致），sha256 `6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208`，已回填 registry 并去掉 `tbd`；`model install whisper-medium` 退出码 0，产物 `models/whisper/whisper-medium/{ggml-medium.bin,VERIFIED.json}` |
 | AC-04 双语 | ✅ | `i18n-check` 通过；`verify-contract` 通过 |
 
 ## 3. 实测数据回填（禁止编造）
@@ -27,15 +27,19 @@
 | tiny 引擎耗时 | 104.8 s（RTF 0.058） | engine.log |
 | tiny 段数 | 163 | 产物 |
 | medium 期望字节 | 1,533,763,059 | registry（此前已交叉验证） |
-| medium 实测 sha256 | 待下载完成 | 本机计算 |
-| 下载吞吐 | ≈190 KB/s（hf-mirror，实测） | curl |
+| medium 实测字节 | **1,533,763,059**（一致） | 本机下载后 `ls` |
+| medium 实测 sha256 | **`6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208`** | 本机 `sha256sum` |
+| 下载吞吐 | 2026-11-21 实测 ≈190 KB/s；2026-11-26 重测已明显恢复（1.46 GB 数分钟内完成） | curl |
+| medium 5 min 片段 | 引擎 35.48 s（RTF **0.118**），行宽 median 18 / max 40 / 超 40 字 = 0 | `logs/engine.log`、`transcript.md` |
+| medium 30 min 整集（29:57） | 引擎 **199.13 s（RTF 0.111）**，334 段；median 23 / p90 38 / max 40；超 40 字 = 0 | 本机实跑（CHG-0015 §3） |
+| 粗估 CER（同集 vs B 站参考） | tiny **33.98%** → medium **7.12%**（LCS 近似，偏高上界） | 本次计算（CHG-0015 §3 已注明局限） |
 | 60 s 片段 `-ml 0` | 25 段，长度 4/18/10（min/max/median） | 直调 whisper-cli |
 | 60 s 片段 `-ml 30 -sow` | **同 25 段，4/18/10** | 同上 |
 | 30 min `max_len=30` | 163 段，行宽 median 32 / p90 96 / **max 328** | `scripts/verify-lines.py` |
 | 30 min `max_len=0` | **完全相同** 163 / 32 / 96 / 328 | 同上 |
 | **align 上限修复后** | **283 段 / median 32 / p90 39 / max 40，超限行 = 0** | 同一集重跑（全新 bundle） |
 | **第二集交叉验证** | **239 段 / median 31 / p90 39 / max 40，超限行 = 0** | `【战锤40K世界观02】…mp4`（不同视频） |
-| 字错率粗估（tiny vs B 站参考） | ep01 **17.8%**、ep02 **43.1%** | `difflib` 等长前缀比对 |
+| 字错率粗估（旧方法，已弃用） | ep01 17.8%、ep02 43.1% | `difflib` 等长前缀比对；**不要引用**，改用上方 LCS 近似值 |
 
 > **方法局限（必须写明）**：上述 CER 用「取两串等长前缀逐字比对」，**一处插入/删除会让后续全体错位**，
 > 所以它是上界估计而非真 CER；两集字符总量几乎相等（7746/7682、6473/6475）说明内容没漏，
@@ -49,6 +53,6 @@
 
 | # | 缺陷 | 根因 | 状态 |
 |---|---|---|---|
-| 1 | 中文输出字词错误率高 | 模型太小（tiny 为下限） | 本 CHG 修（A1 换 medium） |
+| 1 | 中文输出字词错误率高 | 模型太小（tiny 为下限） | ✅ 已修：medium 实测 sha256 并安装成功；5 min 片段为简体、通顺，RTF 0.118 |
 | 2 | 长句粘连、无法当字幕 | **不是** `max_len` 默认值，而是 `align` 合并无累计上限 | ✅ 已修：`MaxMergedRunes = 40`，实测 max 328 → 40 |
 | 3 | 安装按钮「像没反应」 | 多数模型 sha256 为 `tbd` → 后端异步拒绝，错误只在顶部一行 | 本 CHG 让 medium 可装；行内提示见审计表 P1 |

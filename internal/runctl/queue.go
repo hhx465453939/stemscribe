@@ -36,6 +36,10 @@ type QueueItem struct {
 	Segments    int        `json:"segments"`
 	ArtifactDir string     `json:"artifact_dir"`
 	Message     string     `json:"message"`
+	// Warnings carries machine codes the UI must surface on this row (for example
+	// MODEL_SUBSTITUTED when the requested model was not installed). Without this
+	// the substitution only existed in a log the row never showed.
+	Warnings []string `json:"warnings,omitempty"`
 
 	opts Options
 }
@@ -163,6 +167,7 @@ func (q *Queue) run(item *QueueItem, opts Options) {
 		item.Percent = st.Percent
 		item.Segments = st.Segments
 		item.ArtifactDir = st.ArtifactDir
+		item.Warnings = warningCodes(st.Events)
 		q.mu.Unlock()
 
 		switch st.State {
@@ -197,6 +202,21 @@ func (q *Queue) startWithRetry(opts Options) (string, error) {
 		time.Sleep(q.poll)
 	}
 	return "", lastErr
+}
+
+// warningCodes extracts the distinct machine codes from a run's warnings, in the
+// order they first appeared.
+func warningCodes(events []Event) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ev := range events {
+		if ev.Kind != "stage.warn" || ev.Code == "" || seen[ev.Code] {
+			continue
+		}
+		seen[ev.Code] = true
+		out = append(out, ev.Code)
+	}
+	return out
 }
 
 // Snapshot returns a copy of the queue.

@@ -99,7 +99,9 @@
       "family": "whisper",
       "engine": "whisper",
       "display_name": "Whisper Tiny",
-      "langs": ["multi"],
+      "langs": [
+        "multi"
+      ],
       "files": [
         {
           "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
@@ -125,7 +127,9 @@
       "family": "whisper",
       "engine": "whisper",
       "display_name": "Whisper Base",
-      "langs": ["multi"],
+      "langs": [
+        "multi"
+      ],
       "files": [
         {
           "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
@@ -151,7 +155,9 @@
       "family": "whisper",
       "engine": "whisper",
       "display_name": "Whisper Small",
-      "langs": ["multi"],
+      "langs": [
+        "multi"
+      ],
       "files": [
         {
           "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
@@ -177,13 +183,14 @@
       "family": "whisper",
       "engine": "whisper",
       "display_name": "Whisper Medium",
-      "langs": ["multi"],
+      "langs": [
+        "multi"
+      ],
       "files": [
         {
           "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
           "size": 1533763059,
-          "sha256": null,
-          "tbd": true,
+          "sha256": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
           "dest": "ggml-medium.bin"
         }
       ],
@@ -204,13 +211,14 @@
       "family": "whisper",
       "engine": "whisper",
       "display_name": "Whisper Large v3",
-      "langs": ["multi"],
+      "langs": [
+        "multi"
+      ],
       "files": [
         {
           "url": "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
           "size": 3095033483,
-          "sha256": null,
-          "tbd": true,
+          "sha256": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
           "dest": "ggml-large-v3.bin"
         }
       ],
@@ -224,7 +232,7 @@
         "url": "https://github.com/openai/whisper/blob/main/LICENSE"
       },
       "source": "https://huggingface.co/ggerganov/whisper.cpp",
-      "notes": "Needs a 12 GB class GPU. Size cross-checked against a known-good local copy."
+      "notes": "Needs a 12 GB class GPU. Size and sha256 measured on 2026-11-26 from hf-mirror (ETag matched the computed digest)."
     },
     {
       "id": "uvr-vr-hp2-vocals",
@@ -240,7 +248,10 @@
           "dest": "HP2_all_vocals.pth"
         }
       ],
-      "stems": ["vocals", "instrumental"],
+      "stems": [
+        "vocals",
+        "instrumental"
+      ],
       "vram_estimate_mb": 1500,
       "ram_estimate_mb": 1200,
       "disk_after_install_mb": 61,
@@ -252,6 +263,35 @@
       },
       "source": "https://huggingface.co/lj1995/VoiceConversionWebUI",
       "notes": "URL and byte size verified by HTTP HEAD on hf-mirror. sha256 stays tbd until the file is downloaded, so install refuses it (F-10). VR family is two-stem."
+    },
+    {
+      "id": "uvr-mdx-kim-vocal-2",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "UVR5 · Kim Vocal 2 (MDX-NET)",
+      "stems": [
+        "vocals",
+        "instrumental"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/Kim_Vocal_2.onnx",
+          "size": 66759214,
+          "sha256": "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b",
+          "dest": "Kim_Vocal_2.onnx"
+        }
+      ],
+      "vram_estimate_mb": 0,
+      "ram_estimate_mb": 3200,
+      "disk_after_install_mb": 64,
+      "quality_tier": "max",
+      "segment_default_s": 15,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui"
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Default vocal extractor (ADR-038). Runs on the CPU onnxruntime provider, so no VRAM is used; 3.0 GB peak RSS measured on a 30 s clip. Byte size and sha256 measured on 2026-11-26 from hf-mirror."
     }
   ]
 }

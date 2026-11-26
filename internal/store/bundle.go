@@ -52,9 +52,11 @@ var stageOutputs = map[Stage][]string{
 	StageDownload: {"source/video.mp4"},
 	// Probe only reads metadata; it writes nothing of its own.
 	StageProbe: nil,
-	// prepareAudio writes this file before the pipeline runs (copy or ffmpeg).
-	StageDemux:      {"audio/16k.wav"},
-	StageSeparate:   {"audio/vocals.wav"},
+	// prepareAudio writes both files before the pipeline runs (one ffmpeg pass):
+	// the separator's 44.1 kHz stereo input and whisper's 16 kHz mono copy.
+	StageDemux: {"audio/16k.wav", "audio/full.wav"},
+	// Separation produces both stems plus the 16 kHz mono vocals that whisper reads.
+	StageSeparate:   {"audio/vocals.wav", "audio/instrumental.wav", "audio/vocals16k.wav"},
 	StageTranscribe: {"text/transcript.json"},
 	StageAlign:      {"text/transcript.json"},
 	StagePolish:     {"text/polished.md"},

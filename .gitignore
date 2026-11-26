@@ -79,8 +79,13 @@ desktop.ini
 coverage.out
 coverage.html
 *.cover
-/tmp/
 /testdata/generated/
+
+# —— 本地临时产物（一律落在项目内 tmp/，禁止落到 C 盘用户目录）——
+/tmp/
+/.tmp/
+tmp/
+*.tmp
 
 # —— 上游参考源码（调研用，不入库）——
 /_ref/

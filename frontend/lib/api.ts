@@ -167,6 +167,8 @@ export interface QueueItemView {
   segments: number;
   artifact_dir: string;
   message: string;
+  /** Machine codes the row must surface, e.g. MODEL_SUBSTITUTED. */
+  warnings?: string[];
 }
 
 export interface QueueView {
@@ -227,6 +229,8 @@ export async function removeQueued(id: string): Promise<boolean> {
 export interface SettingsView {
   output_dir: string;
   model: string;
+  /** UVR5 separation model. Separate from the transcription model on purpose. */
+  separator?: string;
   workdir: string;
 }
 
@@ -243,6 +247,7 @@ export async function getSettings(): Promise<SettingsView | null> {
 export async function saveSettings(patch: {
   output_dir?: string;
   model?: string;
+  separator?: string;
 }): Promise<{ error?: string }> {
   try {
     const res = await fetch("/api/settings", {
@@ -267,6 +272,32 @@ export interface ShellBridge {
 export function shell(): ShellBridge | null {
   if (typeof window === "undefined") return null;
   return (window as unknown as { go?: { main?: { App?: ShellBridge } } }).go?.main?.App ?? null;
+}
+
+/** The bits of the Wails runtime this UI uses. Absent in a browser. */
+interface WailsRuntime {
+  OnFileDrop?: (
+    cb: (x: number, y: number, paths: string[]) => void,
+    useDropTarget?: boolean,
+  ) => void;
+  OnFileDropOff?: () => void;
+}
+
+/**
+ * Subscribes to files dropped on the window. Returns an unsubscribe function.
+ *
+ * `useDropTarget=false` accepts a drop anywhere in the window instead of only on an
+ * element tagged via a CSS variable; for a single-window tool that is the behaviour
+ * people expect (ADR-040).
+ */
+export function onFilesDropped(cb: (paths: string[]) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const rt = (window as unknown as { runtime?: WailsRuntime }).runtime;
+  if (!rt?.OnFileDrop) return () => {};
+  rt.OnFileDrop((_x, _y, paths) => {
+    if (Array.isArray(paths) && paths.length > 0) cb(paths);
+  }, false);
+  return () => rt.OnFileDropOff?.();
 }
 
 /** Formats mm:ss from milliseconds; used by the library table. */

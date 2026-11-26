@@ -92,7 +92,12 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 10, G: 11, B: 13, A: 255},
 		AssetServer:      &assetserver.Options{Assets: ui, Handler: handler},
 		OnStartup:        app.startup,
-		Bind:             []any{app},		Windows: &windows.Options{
+		Bind:             []any{app},
+		// Dropping files onto the window is a command, not a text fill-in (ADR-040):
+		// the page registers runtime.OnFileDrop and receives absolute paths, then
+		// enqueues them immediately. Wails only forwards OS drops when this is on.
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
+		Windows: &windows.Options{
 			// Keep the native frame: the UI is a tool window, not a splash screen.
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,

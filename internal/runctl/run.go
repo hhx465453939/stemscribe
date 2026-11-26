@@ -43,6 +43,14 @@ type Options struct {
 	// Emit receives pipeline events. All progress is derived from these; nothing is
 	// invented by a timer (ADR-023).
 	Emit func(pipeline.Event)
+
+	// retryDowngraded guards the one automatic retry after an out-of-memory
+	// failure, so a machine that cannot run the fallback either fails instead of
+	// looping through every model.
+	retryDowngraded bool
+	// downgradeNote explains, inside the retried run's own log, why the model is
+	// not the requested one.
+	downgradeNote string
 }
 
 // Outcome reports what a finished run produced.
@@ -54,8 +62,8 @@ type Outcome struct {
 }
 
 // TotalStages is the progress denominator: the stages this run will actually
-// report. Polish is never part of the local path, and separation only counts when
-// it is enabled -- otherwise the bar could never reach 100%.
+// report. Polish is never part of the local path; separation counts whenever the
+// run is real, because it is a mandatory stage there (ADR-037).
 func TotalStages(separate bool) int {
 	n := len(store.StageOrder) - 1
 	if !separate {
@@ -67,9 +75,56 @@ func TotalStages(separate bool) int {
 	return n
 }
 
+// separationEnabled reports whether a run must extract vocals before it
+// transcribes. Only the synthetic test double is exempt: it has no audio in the
+// first place, so demanding a UVR5 runtime from it would only break the smoke test.
+func separationEnabled(kind string) bool {
+	return !strings.EqualFold(kind, "synthetic")
+}
+
 // Run executes one bundle end to end. It returns an error only for fatal
 // conditions; a stage failure is reported through the error it carries.
+//
+// One automatic retry is built in: if the engine ran out of device memory the
+// run is restarted with the next smaller installed model and the substitution is
+// written to the task's own event log (ADR-039). Demux and separation are already
+// checkpointed, so the retry resumes at transcribe instead of redoing the work.
 func Run(ctx context.Context, o Options) (Outcome, error) {
+	out, err := runOnce(ctx, o)
+	if err == nil || o.retryDowngraded || !isAllocationFailure(err) {
+		return out, err
+	}
+	wd := o.Workdir
+	if wd == "" {
+		if wd, err = config.DefaultWorkdir(); err != nil {
+			return out, err
+		}
+	}
+	requested := o.ModelID
+	if requested == "" {
+		if settings, _, loadErr := LoadSettings(wd); loadErr == nil {
+			requested = settings.Stages.Whisper
+		}
+	}
+	next, ok := nextSmallerInstalled(wd, requested)
+	if !ok {
+		return out, err
+	}
+	retry := o
+	retry.ModelID = next
+	retry.retryDowngraded = true
+	retry.downgradeNote = fmt.Sprintf(
+		"%s ran out of memory; retried with %s. Install more VRAM headroom or pick %s to avoid this.",
+		requested, next, next)
+	retryOut, retryErr := runOnce(ctx, retry)
+	if retryErr != nil {
+		return retryOut, retryErr
+	}
+	return retryOut, nil
+}
+
+// runOnce is the real body of a run.
+func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	var out Outcome
 	if o.Input == "" {
 		return out, fmt.Errorf("input is required")
@@ -154,9 +209,10 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	params := o.Params
 	demux := InputNeedsDemux(absInput)
 
-	// Separation is opt-in twice over: the user must ask for it and settings must
-	// allow it. Either one saying no is enough, and neither is inferred.
-	separate := o.Separate && settings.Stages.Separate
+	// Separation is mandatory for the real engine and never inferred from a user
+	// switch (ADR-037). Only the synthetic test double -- which cannot load a model
+	// at all -- runs without it.
+	separate := separationEnabled(kind)
 	disabled := map[store.Stage]bool{
 		store.StageSeparate: !separate,
 		store.StagePolish:   true,
@@ -165,6 +221,13 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	modelID := o.ModelID
 	if modelID == "" {
 		modelID = settings.Stages.Whisper
+	}
+	sepModelID := ""
+	if separate {
+		sepModelID = settings.Stages.Separator
+		if sepModelID == "" {
+			sepModelID = config.Defaults(layout.Root).Stages.Separator
+		}
 	}
 	// Settings name a preferred model that may never have been downloaded. Failing the
 	// very first click on "whisper-medium is missing" is technically honest but breaks
@@ -177,25 +240,24 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		}
 	}
 	engName, engVersion := "synthetic", Version
-	eng, engDesc, engErr := BuildEngine(kind, layout.Root, modelID,
+	eng, engDesc, engErr := BuildEngine(kind, layout.Root, modelID, sepModelID,
 		string(settings.Runtime.LockedBackend), o.DurationMS, demux, params)
 	if engErr != nil {
 		return out, engErr
 	}
 	emitLogged(pipeline.Event{Kind: "engine", Note: engDesc})
-	if w, ok := eng.(*engine.Whisper); ok {
-		engName, engVersion = "whisper.cpp", w.Version
+	if o.downgradeNote != "" {
+		emitLogged(pipeline.Event{Kind: "stage.warn", Code: "MODEL_SUBSTITUTED", Note: o.downgradeNote})
 	}
-
-	// Separation moved to CHG-0003 (ADR-014). Saying so once and continuing keeps an
-	// unavailable optional stage from failing an otherwise fine transcription.
-	if separate {
-		if _, isSynth := eng.(*SyntheticEngine); !isSynth {
-			emitLogged(pipeline.Event{Kind: "stage.warn", Stage: string(store.StageSeparate),
-				Code: "SEPARATE_UNAVAILABLE", Note: "vocal separation is not available yet; transcribing the original audio"})
-			separate = false
-			disabled[store.StageSeparate] = true
+	sepVersion := ""
+	switch e := eng.(type) {
+	case *engine.Composite:
+		engName, engVersion = "whisper.cpp", e.Version
+		if e.Separator != nil {
+			sepVersion = e.Separator.Version
 		}
+	case *engine.Whisper:
+		engName, engVersion = "whisper.cpp", e.Version
 	}
 
 	cp, err := bundle.ReadCheckpoint(videoID)
@@ -210,7 +272,13 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	if transcribeHash == "" {
 		transcribeHash = "engine-defaults"
 	}
-	stageParams := map[string]string{"transcribe": transcribeHash}
+	// The model is part of the stage's identity: without this a switch from medium
+	// to large-v3 resumed at align and reused the old transcript, which made the
+	// model option look like it did nothing.
+	stageParams := map[string]string{
+		"transcribe": transcribeHash + ";model=" + modelID,
+		"separate":   "model=" + sepModelID,
+	}
 
 	// Plan only after every `disabled` decision is final, or the plan resumes at a
 	// stage the runner then skips and the parameter comparison is never reached.
@@ -233,10 +301,10 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		VideoID:      videoID,
 		Separate:     separate,
 		Transcribe:   pipeline.TranscribeOptions{Model: modelID, VAD: params.VAD},
-		SeparateOpts: pipeline.SeparateOptions{SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
+		SeparateOpts: pipeline.SeparateOptions{Model: sepModelID, SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
 	})
 	if err != nil {
-		meta := BuildMeta(videoID, o.Title, absInput, "failed", engName, engVersion, params)
+		meta := BuildMeta(videoID, o.Title, absInput, "failed", engName, engVersion, modelID, sepModelID, sepVersion, params)
 		meta.Stages[string(result.FailedAt)] = store.StageRun{State: "failed", Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		return out, fmt.Errorf("failed at %s: %w", result.FailedAt, err)
@@ -250,7 +318,7 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 		return out, fmt.Errorf("export: %w", err)
 	}
 
-	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, params)
+	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, modelID, sepModelID, sepVersion, params)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}
@@ -261,6 +329,60 @@ func Run(ctx context.Context, o Options) (Outcome, error) {
 	out.Segments = len(segs)
 	out.Completed = result.Completed
 	return out, nil
+}
+
+// modelLadder orders the whisper models from largest to smallest. A downgrade
+// walks it downwards; it is deliberately a fixed list rather than a sort on
+// registry fields, so the order is reviewable in one place.
+var modelLadder = []string{"whisper-large-v3", "whisper-medium", "whisper-small", "whisper-base", "whisper-tiny"}
+
+// isAllocationFailure recognises the errors whisper.cpp/ggml emit when the model
+// does not fit on the device. The strings are the engine's own words; matching a
+// generic "error" here would retry on every crash.
+func isAllocationFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"out of memory",
+		"failed to allocate",
+		"allocation failed",
+		"erroroutofdevicememory",
+		"vk::device::allocatememory",
+		"device memory allocation",
+		"not enough memory",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// nextSmallerInstalled returns the next model down the ladder that is actually on
+// disk, so a retry never fails on a missing file.
+func nextSmallerInstalled(workdir, current string) (string, bool) {
+	reg, err := registry.Builtin()
+	if err != nil {
+		return "", false
+	}
+	idx := -1
+	for i, id := range modelLadder {
+		if id == current {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return "", false
+	}
+	for _, id := range modelLadder[idx+1:] {
+		if _, ok := engine.FindModel(workdir, reg, id); ok {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // PlanSkips reports whether the plan considers a stage already valid. Callers need

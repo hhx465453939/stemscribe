@@ -56,18 +56,24 @@
       "source": "https://huggingface.co/ggerganov/whisper.cpp"
     },
     {
-      "id": "uvr-mdx-kuielab-b4",
+      "id": "uvr-mdx-kim-vocal-2",
       "family": "separator",
       "engine": "separator",
-      "display_name": "MDX-Net · Kim Vocal 2 (UVR)",
+      "display_name": "UVR5 · Kim Vocal 2 (MDX-NET)",
+      "stems": ["vocals", "instrumental"],
       "files": [
-        { "url": "models/separators/uvr/Kim_Vocal_2.onnx",
-          "size": 63100000, "sha256": null, "dest": "Kim_Vocal_2.onnx" }
+        { "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/Kim_Vocal_2.onnx",
+          "size": 66759214,
+          "sha256": "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b",
+          "dest": "Kim_Vocal_2.onnx" }
       ],
-      "vram_estimate_mb": 1500,
+      "vram_estimate_mb": 0,
+      "ram_estimate_mb": 3200,
+      "disk_after_install_mb": 64,
+      "quality_tier": "max",
       "segment_default_s": 15,
       "license": { "spdx": "MIT", "url": "https://github.com/Anjok07/ultimatevocalremovergui" },
-      "source": "https://github.com/Anjok07/ultimatevocalremovergui"
+      "source": "https://huggingface.co/lainlives/audio-separator-models"
     }
   ]
 }
@@ -79,7 +85,7 @@
 |---|---|---|
 | `mirrors[].priority` | 越小越先试 | 失败才降级到下一镜像，不是并发 |
 | `archive.sha256` | **整包**校验 | 与解压后逐文件指纹分开：前者防传输损坏，后者防运行时目录被污染 |
-| `vram_estimate_mb` | 稳态显存占用**经验值** | 仅用于装前预检；真实值由首次运行后校准并写 `config/calibration.json` |
+| `vram_estimate_mb` | 稳态显存占用**经验值** | 仅用于装前预检；真实值由首次运行后校准并写 `config/calibration.json`。分离模型跑 CPU onnxruntime，0 是真实值；whisper 族必须 >0 |
 | `disk_after_install_mb` | 安装后占用（含解压） | 预检用这个，不是 `size` |
 | `quality_tier` | `light` / `balanced` / `max` | 对应首次向导三档，不是质量评分 |
 | `license.spdx` | 权重许可 | UVR 系权重许可各异，registry 不做镜像分发，只指官方源 |
@@ -100,6 +106,11 @@
 → 写 models.lock.json（id → sha256 + install_time + source_url）
 ```
 
+**分离运行时是一个例外**：Python 环境带绝对路径和平台解释器，无法作为 registry archive 分发。
+`stemscribe runtime install separator-python` 用 uv（优先）或 `python -m venv` 建
+`runtimes/separator/venv`，再从 PyPI 安装 `audio-separator[cpu]`；装完用 import 探测并写
+`INSTALLED.json`。模型本身仍走 registry + hf-mirror + 实测 sha256，不例外。
+
 **必须守住的四条**
 1. **sha256 不可跳过**（`--no-verify` 仅在开发者模式且 UI 显红字警告时允许）。
 2. **原子落盘**：禁止「直接下载到最终路径」——断电会留下半截模型被误认为可用。
@@ -115,13 +126,17 @@
 │   ├── 1.7.4-cpu/     whisper-cli.exe  VERIFIED.json
 │   └── ACTIVE.json                  # {"engine":"whisper","version":"1.7.4","backend":"cuda12"}
 ├── separator/
-│   └── 0.28-py311/    python.exe  Lib/site-packages/...  VERIFIED.json
+│   ├── venv/          Scripts/python.exe  Lib/site-packages/audio_separator/...
+│   ├── meta/          download_checks.json  mdx_model_data.json  vr_model_data.json
+│   ├── helper.py      # 内嵌脚本，首次运行落盘
+│   └── INSTALLED.json # {"version":"0.48.0","source_url":"https://pypi.org/project/audio-separator/"}
 └── ffmpeg/
     └── 7.1/           ffmpeg.exe  ffprobe.exe  VERIFIED.json
 
 <workdir>/models/
-├── whisper/whisper-medium-q5_0/ggml-medium-q5_0.bin
-└── separators/uvr/Kim_Vocal_2.onnx
+├── whisper/whisper-large-v3/ggml-large-v3.bin
+├── whisper/whisper-medium/ggml-medium.bin
+└── separator/uvr-mdx-kim-vocal-2/Kim_Vocal_2.onnx
 
 <workdir>/config/
 ├── calibration.json   # 实测显存档位（自动回写）

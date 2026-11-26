@@ -151,7 +151,7 @@ internal/
   config/                工作目录解析、settings schema 迁移
   registry/              内置 catalog 加载与校验
   downloader/            分片/续传/sha256/原子落盘/镜像
-  engine/                protocol · supervisor · whispercpp · separator · ffmpeg
+  engine/                whisper.go · separator.go(+helper.py, separator_meta/) · ffmpeg.go · locate.go
   pipeline/              阶段实现 + DAG + 状态机 + checkpoint
   resource/              nvml 探测 · 预算 · LRU · 降级
   provider/              openai_compat · anthropic · capabilities · prompt

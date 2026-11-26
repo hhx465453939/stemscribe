@@ -59,6 +59,27 @@ func CatalogNow(workdir string) (Catalog, error) {
 		}
 	}
 
+	// The separator runtime is a Python virtualenv, not a registry archive, so it has
+	// no entry to iterate over. Without a row here the model centre cannot install it,
+	// and a first run on a fresh machine can only be unblocked by dropping to the CLI
+	// -- the window would tell the user to run a command it does not offer.
+	{
+		_, sepOK := engine.FindSeparatorPython(workdir)
+		sep := CatalogItem{
+			ID:        engine.SeparatorRuntimeID,
+			Name:      "UVR5 separator (Python venv)",
+			Kind:      "runtime",
+			License:   "MIT",
+			SizeMB:    1040, // measured on a clean venv with audio-separator[cpu]
+			Installed: sepOK,
+		}
+		if sepOK {
+			out.Installed = append(out.Installed, sep)
+		} else {
+			out.Available = append(out.Available, sep)
+		}
+	}
+
 	for _, r := range reg.Runtimes {
 		// Querying by backend is wrong for runtimes: ffmpeg and the whisper cpu build
 		// both sit under backend "cpu", so a backend lookup reports one of them as

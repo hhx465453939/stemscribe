@@ -94,6 +94,75 @@ func (f *FFmpeg) ToWhisperWAV(ctx context.Context, inPath, outPath string) error
 	return nil
 }
 
+// ToSeparationWAV converts any input into 44.1 kHz 16-bit stereo PCM WAV, the
+// format the UVR5 models were trained on.
+//
+// Keeping this separate from ToWhisperWAV matters: the separator needs the full
+// band and both channels, while whisper needs neither. One file cannot serve
+// both without throwing away information before separation.
+func (f *FFmpeg) ToSeparationWAV(ctx context.Context, inPath, outPath string) error {
+	if _, err := os.Stat(inPath); err != nil {
+		return fmt.Errorf("separation input: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return fmt.Errorf("separation output dir: %w", err)
+	}
+
+	args := []string{
+		"-hide_banner", "-nostdin", "-y",
+		"-i", inPath,
+		"-vn",
+		"-ac", "2",
+		"-ar", "44100",
+		"-c:a", "pcm_s16le",
+		outPath,
+	}
+	_, stderr, err := f.runner()(ctx, f.Exe, args)
+	if err != nil {
+		return fmt.Errorf("extract audio for separation: %w (%s)", err, lastLine(stderr))
+	}
+	info, statErr := os.Stat(outPath)
+	if statErr != nil || info.Size() == 0 {
+		return fmt.Errorf("separation input produced no audio at %s", filepath.Base(outPath))
+	}
+	return nil
+}
+
+// ToWAVPair decodes the source once into the two files the pipeline needs: a
+// 44.1 kHz stereo track for UVR5 and a 16 kHz mono track for whisper-cli.
+//
+// Decoding twice would cost a second pass over every source file; a single ffmpeg
+// invocation can write both outputs from one demux.
+func (f *FFmpeg) ToWAVPair(ctx context.Context, inPath, separationPath, whisperPath string) error {
+	if _, err := os.Stat(inPath); err != nil {
+		return fmt.Errorf("demux input: %w", err)
+	}
+	for _, out := range []string{separationPath, whisperPath} {
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return fmt.Errorf("demux output dir: %w", err)
+		}
+	}
+
+	args := []string{
+		"-hide_banner", "-nostdin", "-y",
+		"-i", inPath,
+		"-vn",
+		"-map", "0:a:0", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", separationPath,
+		"-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", whisperPath,
+	}
+	_, stderr, err := f.runner()(ctx, f.Exe, args)
+	if err != nil {
+		return fmt.Errorf("demux failed: %w (%s)", err, lastLine(stderr))
+	}
+	for _, out := range []string{separationPath, whisperPath} {
+		info, statErr := os.Stat(out)
+		if statErr != nil || info.Size() == 0 {
+			return fmt.Errorf("demux produced no output at %s", filepath.Base(out))
+		}
+	}
+	return nil
+}
+
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {

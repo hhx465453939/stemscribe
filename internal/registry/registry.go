@@ -310,8 +310,14 @@ func validateModel(m Model) error {
 			return err
 		}
 	}
-	if m.VRAMEstimateMB <= 0 {
-		return fmt.Errorf("vram_estimate_mb must be positive")
+	// VRAM is only meaningful for engines that actually use the GPU. The separator
+	// runs on the CPU onnxruntime provider today, where 0 is the truthful value and
+	// a positive one would be an invented budget.
+	if m.VRAMEstimateMB < 0 {
+		return fmt.Errorf("vram_estimate_mb must be >= 0, got %d", m.VRAMEstimateMB)
+	}
+	if m.VRAMEstimateMB == 0 && m.Family == string(EngineWhisper) {
+		return fmt.Errorf("vram_estimate_mb must be positive for whisper models")
 	}
 	if m.DiskAfterInstallMB <= 0 {
 		return fmt.Errorf("disk_after_install_mb must be positive")

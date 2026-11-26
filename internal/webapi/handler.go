@@ -157,12 +157,14 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 			writeJSON(w, http.StatusOK, map[string]any{
 				"output_dir": settings.OutputDir,
 				"model":      settings.Stages.Whisper,
+				"separator":  settings.Stages.Separator,
 				"workdir":    settings.Workdir,
 			})
 		case http.MethodPut:
 			var body struct {
 				OutputDir *string `json:"output_dir"`
 				Model     *string `json:"model"`
+				Separator *string `json:"separator"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
@@ -182,6 +184,9 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 			}
 			if body.Model != nil {
 				settings.Stages.Whisper = *body.Model
+			}
+			if body.Separator != nil {
+				settings.Stages.Separator = *body.Separator
 			}
 			if err := layout.Save(settings); err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

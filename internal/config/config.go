@@ -63,10 +63,14 @@ type UIPrefs struct {
 
 // StagePrefs holds pipeline defaults applied to new tasks.
 type StagePrefs struct {
-	Separate   bool   `json:"separate"`
-	Whisper    string `json:"whisper_model"`
-	Polish     bool   `json:"polish"`
-	RetainRaw  bool   `json:"retain_raw_video"`
+	// Separate stays in the on-disk schema for compatibility, but it is no longer
+	// a user-facing switch: separation is mandatory for the real engine (ADR-037).
+	Separate bool `json:"separate"`
+	Whisper  string `json:"whisper_model"`
+	// Separator names the UVR5 model used to extract vocals before transcription.
+	Separator   string      `json:"separator_model"`
+	Polish      bool        `json:"polish"`
+	RetainRaw   bool        `json:"retain_raw_video"`
 	QualityTier QualityTier `json:"quality_tier"`
 }
 
@@ -93,7 +97,8 @@ func Defaults(workdir string) Settings {
 		},
 		Stages: StagePrefs{
 			Separate:    true,
-			Whisper:     "whisper-medium",
+			Whisper:     "whisper-large-v3",
+			Separator:   "uvr-mdx-kim-vocal-2",
 			Polish:      false,
 			RetainRaw:   true,
 			QualityTier: TierBalanced,
@@ -231,6 +236,9 @@ func (l Layout) Load() (Settings, error) {
 	}
 	if s.Stages.QualityTier == "" {
 		s.Stages.QualityTier = TierBalanced
+	}
+	if s.Stages.Separator == "" {
+		s.Stages.Separator = Defaults(l.Root).Stages.Separator
 	}
 	if s.UI.Language == "" {
 		s.UI.Language = "zh-CN"

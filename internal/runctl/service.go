@@ -25,7 +25,10 @@ type Event struct {
 	At    string `json:"at"`
 	Stage string `json:"stage"`
 	Kind  string `json:"kind"`
-	Note  string `json:"note,omitempty"`
+	// Code is the machine-readable tag (MODEL_SUBSTITUTED, ENGINE_OOM, ...). The UI
+	// needs it to decide what to surface; the prose in Note is for humans.
+	Code string `json:"code,omitempty"`
+	Note string `json:"note,omitempty"`
 }
 
 // Status is the whole observable state of a run. It is a snapshot returned by
@@ -77,7 +80,7 @@ func (s *Service) Start(o Options) (string, error) {
 	}
 	s.seq++
 	id := fmt.Sprintf("r-%d", s.seq)
-	total := TotalStages(o.Separate)
+	total := TotalStages(separationEnabled(o.Engine))
 	st := &Status{
 		ID:         id,
 		State:      StateQueued,

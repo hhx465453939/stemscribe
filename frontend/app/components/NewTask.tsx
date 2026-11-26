@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrefs } from "./Providers";
 import {
@@ -7,6 +8,7 @@ import {
   getQueue,
   getSettings,
   listCatalog,
+  onFilesDropped,
   removeQueued,
   saveSettings,
   shell,
@@ -47,7 +49,12 @@ export function NewTask() {
   const [paths, setPaths] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [model, setModel] = useState("");
+  const [language, setLanguage] = useState("zh");
   const [installed, setInstalled] = useState<CatalogItemView[]>([]);
+  // Prerequisites the configured run needs but the disk does not have. Derived from
+  // the same catalog the Models page installs from, so the banner cannot claim
+  // readiness the backend would refuse a second later.
+  const [missing, setMissing] = useState<string[]>([]);
   const [items, setItems] = useState<QueueItemView[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -63,17 +70,32 @@ export function NewTask() {
 
   useEffect(() => {
     void refresh();
-    void getSettings().then((s) => {
+    void Promise.all([getSettings(), listCatalog()]).then(([s, c]) => {
       if (s) {
         setOutputDir(s.output_dir ?? "");
         setModel(s.model ?? "");
       }
-    });
-    void listCatalog().then((c) => {
       // Only installed models are selectable: offering an uninstalled one would fail
       // at run time, which is the trap the audit called out.
       setInstalled(c.installed.filter((m) => m.kind === "whisper"));
+      const have = new Set(c.installed.map((m) => m.id));
+      const gaps: string[] = [];
+      // Separation is mandatory (ADR-037): both the Python runtime and the UVR5
+      // weights are hard prerequisites, not conveniences.
+      if (!have.has("separator-python")) gaps.push("separator-python");
+      if (s?.separator && !have.has(s.separator)) gaps.push(s.separator);
+      if (s?.model && !have.has(s.model)) gaps.push(s.model);
+      setMissing(gaps);
     });
+    // Language lives with the other engine parameters, so an explicit choice on the
+    // parameter page survives a reload too.
+    try {
+      const raw = localStorage.getItem(PARAMS_KEY);
+      const saved = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      if (saved.input_language) setLanguage(saved.input_language);
+    } catch {
+      /* corrupt storage: keep the default */
+    }
   }, [refresh]);
 
   useEffect(() => {
@@ -104,6 +126,38 @@ export function NewTask() {
     }
   }, [t]);
 
+  const enqueuePaths = useCallback(
+    async (inputs: string[]): Promise<boolean> => {
+      if (inputs.length === 0) return false;
+      setError("");
+      setNotice("");
+      // Parameters come from the parameter page; sending {} here was why every knob
+      // looked adjustable and changed nothing.
+      const res = await enqueue(inputs, {
+        outputDir,
+        model,
+        params: { ...readParams(), input_language: language },
+      });
+      if (res.error) {
+        setError(res.error);
+        return false;
+      }
+      if (res.rejected && res.rejected.length > 0) {
+        setNotice(`${t("task.paths")}: ${res.rejected.join(", ")}`);
+      }
+      await refresh();
+      return true;
+    },
+    [outputDir, model, language, refresh, t],
+  );
+
+  // Dropped files are a command, not a form prefill (ADR-040): queue them at once.
+  useEffect(() => {
+    return onFilesDropped((dropped) => {
+      void enqueuePaths(dropped);
+    });
+  }, [enqueuePaths]);
+
   const start = useCallback(async () => {
     const inputs = paths
       .split("\n")
@@ -111,25 +165,23 @@ export function NewTask() {
       .filter(Boolean);
     if (inputs.length === 0 || busy) return;
     setBusy(true);
-    setError("");
-    setNotice("");
     try {
-      // Parameters come from the parameter page; sending {} here was why every knob
-      // looked adjustable and changed nothing.
-      const res = await enqueue(inputs, { outputDir, model, params: readParams() });
-      if (res.error) {
-        setError(res.error);
-        return;
-      }
-      if (res.rejected && res.rejected.length > 0) {
-        setNotice(`${t("task.paths")}: ${res.rejected.join(", ")}`);
-      }
-      setPaths("");
-      await refresh();
+      if (await enqueuePaths(inputs)) setPaths("");
     } finally {
       setBusy(false);
     }
-  }, [paths, busy, outputDir, model, refresh, t]);
+  }, [paths, busy, enqueuePaths]);
+
+  const changeLanguage = useCallback((value: string) => {
+    setLanguage(value);
+    try {
+      const raw = localStorage.getItem(PARAMS_KEY);
+      const saved = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...saved, input_language: value }));
+    } catch {
+      /* storage unavailable: the value still applies to this session */
+    }
+  }, []);
 
   const persist = useCallback(async () => {
     const res = await saveSettings({ output_dir: outputDir, model });
@@ -216,6 +268,22 @@ export function NewTask() {
             </select>
           </label>
 
+          <label className="row" style={{ gap: "var(--sp-2)" }}>
+            <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t("task.language")}
+            </span>
+            <select
+              className="input"
+              value={language}
+              onChange={(e) => changeLanguage(e.target.value)}
+              aria-label={t("task.language")}
+            >
+              <option value="zh">{t("task.langZh")}</option>
+              <option value="en">{t("task.langEn")}</option>
+              <option value="auto">{t("task.langAuto")}</option>
+            </select>
+          </label>
+
           <button type="button" className="btn" onClick={() => void persist()}>
             {t("task.saveSettings")}
           </button>
@@ -225,8 +293,15 @@ export function NewTask() {
           {t("task.outputDirHint")}
         </p>
         <p className="mono muted" style={{ margin: 0 }}>
-          {t("task.pickHint")}
+          {t("task.dragHint")}
         </p>
+
+        {missing.length > 0 ? (
+          <p className="mono" style={{ margin: 0, color: "var(--text-1)" }} role="alert">
+            {t("task.notReady")}: {missing.join(", ")} ·{" "}
+            <Link href="/models">{t("task.goModels")}</Link>
+          </p>
+        ) : null}
 
         {error !== "" ? (
           <p className="mono" style={{ margin: 0, color: "var(--text-1)" }} role="alert">
@@ -265,6 +340,15 @@ export function NewTask() {
                       : item.segments > 0
                         ? t("run.segments", { n: String(item.segments) })
                         : ""}
+                    {item.warnings && item.warnings.length > 0 ? (
+                      <div className="mono" style={{ color: "var(--text-1)" }}>
+                        {item.warnings
+                          .map((code) =>
+                            code === "MODEL_SUBSTITUTED" ? t("warn.modelSubstituted") : code,
+                          )
+                          .join(" · ")}
+                      </div>
+                    ) : null}
                   </td>
                   <td>
                     {item.state === "done" && item.artifact_dir !== "" ? (

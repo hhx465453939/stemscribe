@@ -3,6 +3,7 @@ package pipeline
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // parseSegments decodes a transcript JSON file.
@@ -60,6 +61,22 @@ func ToMarkdown(title string, segs []Segment) string {
 		out += fmt.Sprintf("[%s] %s\n\n", clock(s.StartMS), s.Text)
 	}
 	return out
+}
+
+// ToText renders the plain transcript: one segment per line, no timecodes.
+// This is the file most people actually read (AC-04); srt/vtt/md keep the
+// timing for subtitles and review.
+func ToText(segs []Segment) string {
+	var b strings.Builder
+	for _, s := range segs {
+		line := strings.TrimSpace(s.Text)
+		if line == "" {
+			continue
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func clock(ms int) string {

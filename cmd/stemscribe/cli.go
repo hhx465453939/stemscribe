@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/engine"
@@ -37,6 +38,13 @@ func cmdRun(args []string) int {
 	vad := fs.Bool("vad", false, "voice activity detection (needs a VAD model)")
 	prompt := fs.String("prompt", "", "seed text: terminology, names, style hints")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *noSeparate && !strings.EqualFold(*engineName, "synthetic") {
+		// Separation is a mandatory stage (ADR-037). The flag survives only because the
+		// smoke engine has no audio to separate; using it on the real path would
+		// recreate exactly the silent skip this change removes.
+		fmt.Fprintln(os.Stderr, "run: vocal separation is mandatory for the real engine; --no-separate is only valid with --engine synthetic")
 		return 2
 	}
 

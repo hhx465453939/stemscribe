@@ -26,12 +26,17 @@ type Installed struct {
 type Missing struct {
 	Runtime string
 	Models  []string
-	FFmpeg  bool
+	// SeparatorRuntime marks a missing UVR5 Python environment. Separation is a
+	// mandatory stage (ADR-037), so this is a hard prerequisite, not a hint.
+	SeparatorRuntime bool
+	SeparatorModels  []string
+	FFmpeg           bool
 }
 
 // Empty reports whether the environment is ready to run.
 func (m Missing) Empty() bool {
-	return m.Runtime == "" && len(m.Models) == 0 && !m.FFmpeg
+	return m.Runtime == "" && len(m.Models) == 0 && !m.SeparatorRuntime &&
+		len(m.SeparatorModels) == 0 && !m.FFmpeg
 }
 
 // Hints renders one actionable line per missing item, in install order.
@@ -41,9 +46,17 @@ func (m Missing) Hints() []string {
 		out = append(out, fmt.Sprintf(
 			"missing runtime: %s\n    install: stemscribe runtime install %s", m.Runtime, m.Runtime))
 	}
+	if m.SeparatorRuntime {
+		out = append(out, fmt.Sprintf(
+			"missing vocal-separation runtime (UVR5 via audio-separator)\n    install: stemscribe runtime install %s", SeparatorRuntimeID))
+	}
 	for _, id := range m.Models {
 		out = append(out, fmt.Sprintf(
 			"missing model: %s\n    install: stemscribe model install %s", id, id))
+	}
+	for _, id := range m.SeparatorModels {
+		out = append(out, fmt.Sprintf(
+			"missing separation model: %s\n    install: stemscribe model install %s", id, id))
 	}
 	if m.FFmpeg {
 		out = append(out, "missing ffmpeg\n    install: put ffmpeg.exe under <workdir>/runtimes/ffmpeg/<ver>/ or add it to PATH")
@@ -56,7 +69,35 @@ func (m Missing) Err() error {
 	if m.Empty() {
 		return nil
 	}
-	return fmt.Errorf("environment not ready:\n  %s", strings.Join(m.Hints(), "\n  "))
+	// The commands are for the CLI and for bug reports; a desktop user sees this text
+	// in the queue row, so name the in-app path too rather than sending them to a
+	// terminal they may not have open.
+	return fmt.Errorf("environment not ready:\n  %s\n\n  (in the app: open the Models page to install these)", strings.Join(m.Hints(), "\n  "))
+}
+
+// suggestRuntime names the first whisper runtime an install can actually deliver.
+//
+// Only entries with a measured sha256 qualify: "install" refuses null+tbd bytes
+// (ADR-025), so pointing at an unpublished archive would be advice that cannot be
+// followed. Order follows the backend preference, then CPU is the last resort.
+func suggestRuntime(reg registry.Registry, preferred registry.Backend) string {
+	order := []registry.Backend{preferred, registry.BackendVulkan, registry.BackendCPU}
+	seen := map[registry.Backend]bool{}
+	for _, b := range order {
+		if seen[b] {
+			continue
+		}
+		seen[b] = true
+		rt, ok := reg.FindRuntime(registry.EngineWhisper, b, "windows-x64")
+		if !ok {
+			continue
+		}
+		if rt.Archive.SHA256 == nil || strings.TrimSpace(*rt.Archive.SHA256) == "" {
+			continue
+		}
+		return rt.ID
+	}
+	return "whispercpp-" + string(preferred) + "-win-x64"
 }
 
 // FindRuntime locates an installed whisper runtime for the given backend.
@@ -137,16 +178,18 @@ func FindFFmpeg(workdir string) (string, bool) {
 // Diagnose reports every missing piece in one pass.
 //
 // ffmpeg is only reported when the input actually needs demuxing: demanding it for
-// an already-16k-mono wav is a prerequisite the run does not have.
-func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, modelID string, needsDemux bool) Missing {
+// an already-16k-mono wav is a prerequisite the run does not have. When
+// sepModelID is set the UVR5 runtime and weights are treated as prerequisites
+// too, because separation is mandatory for real engines (ADR-037).
+func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, modelID string, needsDemux bool, sepModelID string) Missing {
 	var m Missing
 
 	if _, ok := FindRuntime(workdir, backend); !ok {
-		if rt, found := reg.FindRuntime(registry.EngineWhisper, backend, "windows-x64"); found {
-			m.Runtime = rt.ID
-		} else {
-			m.Runtime = "whispercpp-" + string(backend) + "-win-x64"
-		}
+		// Naming an unpublished artifact sends the user to an install that must
+		// refuse (sha256 tbd). Suggest the first preference that can actually be
+		// installed; cuda12 is preferred on an NVIDIA host but has no published
+		// build, so the hint would otherwise be a dead end.
+		m.Runtime = suggestRuntime(reg, backend)
 	}
 
 	if modelID == "" {
@@ -157,7 +200,22 @@ func Diagnose(workdir string, reg registry.Registry, backend registry.Backend, m
 		m.Models = append(m.Models, modelID)
 	}
 
+	if sepModelID != "" {
+		if _, ok := FindSeparatorPython(workdir); !ok {
+			m.SeparatorRuntime = true
+		}
+		if _, ok := FindModel(workdir, reg, sepModelID); !ok {
+			m.SeparatorModels = append(m.SeparatorModels, sepModelID)
+		}
+	}
+
 	if needsDemux {
+		if _, ok := FindFFmpeg(workdir); !ok {
+			m.FFmpeg = true
+		}
+	}
+	if sepModelID != "" {
+		// The separator shells out to ffmpeg for decoding and writes 44.1 kHz wav.
 		if _, ok := FindFFmpeg(workdir); !ok {
 			m.FFmpeg = true
 		}

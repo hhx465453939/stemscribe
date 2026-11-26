@@ -14,6 +14,7 @@ import (
 
 	"github.com/hhx465453939/stemscribe/internal/config"
 	"github.com/hhx465453939/stemscribe/internal/downloader"
+	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/registry"
 )
 
@@ -38,13 +39,16 @@ type Progress struct {
 	// digest at that point, which keeps its output order identical to before the move.
 	SHA256 string
 	// Stage names non-download ticks: "start" announces what is about to happen,
-	// "verify" carries the digest. Empty means a plain download tick.
+	// "log" carries one line of installer output, "verify" carries the digest.
+	// Empty means a plain download tick.
 	Stage     string
 	Kind      string
 	ID        string
 	Version   string
 	Backend   string
 	SourceURL string
+	// Note is the payload for Stage == "log" (e.g. one pip line).
+	Note string
 }
 
 type verifiedFile struct {
@@ -52,7 +56,7 @@ type verifiedFile struct {
 	Kind        string    `json:"kind"`
 	Version     string    `json:"version,omitempty"`
 	Backend     string    `json:"backend,omitempty"`
-	SHA256      string    `json:"sha256"`
+	SHA256      string    `json:"sha256,omitempty"`
 	SourceURL   string    `json:"source_url"`
 	InstalledAt time.Time `json:"installed_at"`
 }
@@ -92,6 +96,11 @@ func Install(ctx context.Context, workdir, id string, onProgress func(Progress))
 	}
 	if err = layout.Ensure(); err != nil {
 		return Installed{}, err
+	}
+	if id == engine.SeparatorRuntimeID {
+		// Not a registry archive: a Python environment is built from PyPI rather than
+		// unpacked from a zip, so it cannot be described by the archive schema.
+		return InstallSeparatorRuntime(ctx, layout, onProgress)
 	}
 	reg, err := registry.Builtin()
 	if err != nil {
