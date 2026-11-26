@@ -168,6 +168,7 @@ Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · decisions: [`docs/DEC
 | [`docs/PIPELINE.md`](docs/PIPELINE.md) | Stage DAG, idempotency, alignment repair, failure matrix |
 | [`docs/MODEL-REGISTRY.md`](docs/MODEL-REGISTRY.md) | Registry schema, download/verify flow, licensing |
 | [`docs/RESOURCE-SCHEDULER.md`](docs/RESOURCE-SCHEDULER.md) | VRAM budget, LRU, segmentation, RAM/IO strategy |
+| [`docs/SEPARATION-BENCH.md`](docs/SEPARATION-BENCH.md) | Measured separation throughput, VRAM peaks, GPU-vs-CPU fidelity |
 | [`docs/LLM-PROVIDERS.md`](docs/LLM-PROVIDERS.md) | Provider abstraction, capability resolution, parameter projection |
 | [`docs/UI-DESIGN.md`](docs/UI-DESIGN.md) | Design genes, dual-theme token table, anti-patterns |
 | [`docs/UPSTREAM-RESEARCH.md`](docs/UPSTREAM-RESEARCH.md) | What we borrowed from UVR / Buzz / WhisperDesktop |

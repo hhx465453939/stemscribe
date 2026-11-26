@@ -132,6 +132,7 @@ git log --all -S'<敏感串>' --oneline
 | registry 字段 | `docs/MODEL-REGISTRY.md` + `docs/schema/model-registry.schema.json` |
 | provider 参数 | `docs/LLM-PROVIDERS.md` + `docs/schema/provider.schema.json` |
 | 显存/内存策略 | `docs/RESOURCE-SCHEDULER.md` |
+| 分离性能/基准 | `docs/SEPARATION-BENCH.md`（只写实测，未测项标注） |
 | 视觉/组件 | `docs/UI-DESIGN.md` |
 | AC 状态 | `tasks/CHG-<id>/TRACEABILITY.md` |
 
