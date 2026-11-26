@@ -12,7 +12,8 @@ CHG-0016 只验证了转写阶段的 CUDA，把"CUDA 可用"误当成"整条流�
 | 2026-11-26 | draft | owner 实测反馈（CPU 打满 / CUDA 不动）触发；根因定位 | agent |
 | 2026-11-26 | approved | owner 明确要求修好（「你他妈的上来没有用显卡去计算」），按 PRD/SPEC 执行 | owner |
 | 2026-11-26 | in_progress | 安装器双变体、helper 设备自证、meta/capabilities/UI 贯通，验证中 | agent |
-| 2026-11-26 | verified | 实测全绿：干净安装 accel=cuda12、显存/利用率上升、120 s 与 30 min 计时、全链路四处 cuda12、降级诚实、Checkfix 绿；待 owner 验收后 commit | agent |
+| 2026-11-26 | verified | 实测全绿：干净安装 accel=cuda12、显存/利用率上升、120 s 与 30 min 计时、全链路四处 cuda12、降级诚实、Checkfix 绿 | agent |
+| 2026-11-26 | closed | owner 验收（「能用了，基本60分达到了」），随 6d474bc 推送 | owner |
 
 ## 根因（实测）
 
