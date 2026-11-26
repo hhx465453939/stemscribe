@@ -13,9 +13,15 @@ import (
 // that here -- where the registry and the installed runtimes are both visible -- is
 // the only place it can be decided honestly.
 type Capabilities struct {
-	Backend           string            `json:"backend"`
-	BackendReason     string            `json:"backend_reason"`
-	GPU               bool              `json:"gpu"`
+	Backend       string `json:"backend"`
+	BackendReason string `json:"backend_reason"`
+	// RuntimeVersion is the installed whisper runtime the backend will use. Empty
+	// means nothing is installed, which is why the reason says so.
+	BackendRuntimeVersion string `json:"backend_runtime_version,omitempty"`
+	GPU                   bool   `json:"gpu"`
+	// GPUName is measured through nvidia-smi; empty on non-NVIDIA machines. The
+	// sidebar shows "VULKAN · RTX 3060" instead of a bare backend id.
+	GPUName string `json:"gpu_name,omitempty"`
 	// VRAMTotalMB is measured, not asserted: the sidebar used to print a hardcoded
 	// "GPU 8.1 / 12 GB" from the dictionary, which disagreed with the same screen's
 	// own backend line. 0 means "not measured" and the UI shows a dash.
@@ -30,18 +36,23 @@ type Capabilities struct {
 
 // CapabilitiesNow probes the machine and the registry.
 func CapabilitiesNow(workdir string) (Capabilities, error) {
-	backend, reason := BackendFor("", workdir)
+	bs := BackendReport("", workdir)
 
 	c := Capabilities{
-		Backend:           string(backend),
-		BackendReason:     reason,
-		GPU:               backend != registry.BackendCPU,
-		Separation:        false,
-		SeparationReason:  "vocal separation is not implemented yet (CHG-0003)",
-		Polish:            false,
-		PolishReason:      "LLM polishing needs a provider (CHG-0004)",
-		UnavailableParams: map[string]string{},
+		Backend:               string(bs.Backend),
+		BackendReason:         bs.Reason,
+		BackendRuntimeVersion: bs.RuntimeVersion,
+		GPU:                   bs.Backend != registry.BackendCPU,
+		GPUName:               resource.DeviceName(),
+		Polish:                false,
+		PolishReason:          "LLM polishing needs a provider (CHG-0004)",
+		UnavailableParams:     map[string]string{},
 	}
+
+	// Separation is implemented (ADR-037); what varies is whether this machine has
+	// the Python runtime and the UVR5 weights. The old reason claimed separation was
+	// unimplemented, which was a lie the user could see through in one click.
+	c.Separation, c.SeparationReason = separationStatus(workdir)
 
 	// Voice activity detection needs a dedicated VAD model file, which the registry
 	// does not ship. Offering the switch anyway is how a run ends in an opaque
@@ -66,6 +77,39 @@ func CapabilitiesNow(workdir string) (Capabilities, error) {
 	}
 
 	return c, nil
+}
+
+// separationStatus reports whether the mandatory UVR5 stage can actually run.
+// Both halves are required: the Python environment and the weights. Naming only
+// one would send the user to install something they already have.
+func separationStatus(workdir string) (bool, string) {
+	settings, _, err := LoadSettings(workdir)
+	if err != nil {
+		return false, "settings are unreadable: " + err.Error()
+	}
+	modelID := settings.Stages.Separator
+	if modelID == "" {
+		modelID = "uvr-mdx-kim-vocal-2"
+	}
+	_, hasPython := engine.FindSeparatorPython(workdir)
+	var hasModel bool
+	if reg, regErr := registry.Builtin(); regErr == nil {
+		_, hasModel = engine.FindModel(workdir, reg, modelID)
+	}
+	switch {
+	case hasPython && hasModel:
+		version := engine.SeparatorVersion(workdir)
+		if version == "" {
+			version = "installed"
+		}
+		return true, "UVR5 via audio-separator " + version + " · " + modelID
+	case !hasPython && !hasModel:
+		return false, "separation runtime and model are not installed (Models page)"
+	case !hasPython:
+		return false, "separation runtime (audio-separator) is not installed (Models page)"
+	default:
+		return false, "separation model " + modelID + " is not installed (Models page)"
+	}
 }
 
 // vadModelAvailable reports whether any installed model looks like a VAD model.

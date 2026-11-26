@@ -10,6 +10,7 @@ package runctl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -250,14 +251,17 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		emitLogged(pipeline.Event{Kind: "stage.warn", Code: "MODEL_SUBSTITUTED", Note: o.downgradeNote})
 	}
 	sepVersion := ""
+	backendName := ""
 	switch e := eng.(type) {
 	case *engine.Composite:
 		engName, engVersion = "whisper.cpp", e.Version
+		backendName = e.Backend
 		if e.Separator != nil {
 			sepVersion = e.Separator.Version
 		}
 	case *engine.Whisper:
 		engName, engVersion = "whisper.cpp", e.Version
+		backendName = e.Backend
 	}
 
 	cp, err := bundle.ReadCheckpoint(videoID)
@@ -304,8 +308,15 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		SeparateOpts: pipeline.SeparateOptions{Model: sepModelID, SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
 	})
 	if err != nil {
-		meta := BuildMeta(videoID, o.Title, absInput, "failed", engName, engVersion, modelID, sepModelID, sepVersion, params)
-		meta.Stages[string(result.FailedAt)] = store.StageRun{State: "failed", Message: err.Error()}
+		// A stop is a user decision, not a defect: record it as canceled so the
+		// library does not list it among failures. The stage is still marked so a
+		// resumed run knows where it left off.
+		status, stageState := "failed", "failed"
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			status, stageState = "canceled", "canceled"
+		}
+		meta := BuildMeta(videoID, o.Title, absInput, status, engName, engVersion, backendName, modelID, sepModelID, sepVersion, params)
+		meta.Stages[string(result.FailedAt)] = store.StageRun{State: stageState, Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		return out, fmt.Errorf("failed at %s: %w", result.FailedAt, err)
 	}
@@ -318,7 +329,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		return out, fmt.Errorf("export: %w", err)
 	}
 
-	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, modelID, sepModelID, sepVersion, params)
+	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, backendName, modelID, sepModelID, sepVersion, params)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}

@@ -2,6 +2,7 @@ package runctl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -13,10 +14,11 @@ import (
 type State string
 
 const (
-	StateQueued  State = "queued"
-	StateRunning State = "running"
-	StateDone    State = "done"
-	StateFailed  State = "failed"
+	StateQueued   State = "queued"
+	StateRunning  State = "running"
+	StateDone     State = "done"
+	StateFailed   State = "failed"
+	StateCanceled State = "canceled"
 )
 
 // Event is one step of the run, retained so a client that attaches late can still
@@ -34,20 +36,23 @@ type Event struct {
 // Status is the whole observable state of a run. It is a snapshot returned by
 // value, so a reader can never observe a half-written struct.
 type Status struct {
-	ID         string  `json:"id"`
-	State      State   `json:"state"`
-	Input      string  `json:"input"`
-	Model      string  `json:"model"`
-	Stage      string  `json:"stage"`
-	StageIndex int     `json:"stage_index"`
-	StageTotal int     `json:"stage_total"`
-	Percent    int     `json:"percent"`
-	Segments   int     `json:"segments"`
+	ID          string `json:"id"`
+	State       State  `json:"state"`
+	Input       string `json:"input"`
+	Model       string `json:"model"`
+	Stage       string `json:"stage"`
+	StageIndex  int    `json:"stage_index"`
+	StageTotal  int    `json:"stage_total"`
+	Percent     int    `json:"percent"`
+	Segments    int    `json:"segments"`
 	ArtifactDir string `json:"artifact_dir"`
-	Message    string  `json:"message"`
-	Events     []Event `json:"events"`
-	StartedAt  string  `json:"started_at"`
-	EndedAt    string  `json:"ended_at"`
+	Message     string `json:"message"`
+	// ElapsedMS is computed on read while the run is in flight, so the UI can show
+	// a clock without the service inventing ticks (ADR-023).
+	ElapsedMS int     `json:"elapsed_ms"`
+	Events    []Event `json:"events"`
+	StartedAt string  `json:"started_at"`
+	EndedAt   string  `json:"ended_at"`
 }
 
 // Service owns the run state machine.
@@ -56,19 +61,30 @@ type Status struct {
 // would fight over the same files, and the failure mode (two writers, one
 // checkpoint) is far worse than a "please wait" message.
 type Service struct {
-	mu     sync.Mutex
-	seq    int
-	byID   map[string]*Status
-	latest string
+	mu      sync.Mutex
+	seq     int
+	byID    map[string]*Status
+	latest  string
+	cancels map[string]context.CancelFunc
 }
 
 // NewService creates an empty service.
 func NewService() *Service {
-	return &Service{byID: map[string]*Status{}}
+	return &Service{byID: map[string]*Status{}, cancels: map[string]context.CancelFunc{}}
 }
+
+// runFn is the run implementation, injectable so cancel semantics can be tested
+// without a GPU or a model.
+var runFn = Run
 
 // ErrBusy is returned when a run is already in progress.
 var ErrBusy = fmt.Errorf("a run is already in progress")
+
+// ErrRunNotFound is returned by Cancel for an unknown id.
+var ErrRunNotFound = fmt.Errorf("run not found")
+
+// ErrNotRunning is returned when a finished run is asked to stop.
+var ErrNotRunning = fmt.Errorf("run is not running")
 
 // Start launches a run and returns immediately with its id. Progress is read via
 // Get or Latest; nothing here blocks the caller.
@@ -91,10 +107,34 @@ func (s *Service) Start(o Options) (string, error) {
 	}
 	s.byID[id] = st
 	s.latest = id
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancels[id] = cancel
 	s.mu.Unlock()
 
-	go s.execute(id, o)
+	go s.execute(ctx, id, o)
 	return id, nil
+}
+
+// Cancel stops a running run. The child processes are killed through the context
+// (engine.wireCancel), and the run settles as StateCanceled -- not failed, because
+// "I pressed stop" is not a defect.
+func (s *Service) Cancel(id string) error {
+	s.mu.Lock()
+	st, ok := s.byID[id]
+	if !ok {
+		s.mu.Unlock()
+		return ErrRunNotFound
+	}
+	if st.State != StateRunning && st.State != StateQueued {
+		s.mu.Unlock()
+		return ErrNotRunning
+	}
+	cancel := s.cancels[id]
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return nil
 }
 
 // disabledNote is the note pipeline.Run attaches to a stage that settings switched
@@ -103,11 +143,17 @@ func (s *Service) Start(o Options) (string, error) {
 // first made the bar report 9/7.
 const disabledNote = "disabled by settings"
 
-func (s *Service) execute(id string, o Options) {
+func (s *Service) execute(ctx context.Context, id string, o Options) {
 	s.mu.Lock()
 	st := s.byID[id]
 	st.State = StateRunning
 	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.cancels, id)
+		s.mu.Unlock()
+	}()
 
 	done := 0
 	userEmit := o.Emit
@@ -148,12 +194,27 @@ func (s *Service) execute(id string, o Options) {
 		}
 	}
 
-	out, err := Run(context.Background(), o)
+	out, err := runFn(ctx, o)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st.EndedAt = time.Now().UTC().Format(time.RFC3339)
+	// Freeze the clock at the terminal transition. snapshot() only recomputes it
+	// while the run is live, so without this a canceled or finished row would show
+	// 0s -- and "stopped after 40s" is exactly the fact the user needs to see.
+	if started, perr := time.Parse(time.RFC3339, st.StartedAt); perr == nil {
+		if ms := time.Since(started).Milliseconds(); ms > 0 {
+			st.ElapsedMS = int(ms)
+		}
+	}
 	if err != nil {
+		// A canceled run is not a failure: it is the outcome the user asked for.
+		// The pipeline wraps the engine error, so errors.Is is the only safe check.
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			st.State = StateCanceled
+			st.Message = "stopped by user"
+			return
+		}
 		st.State = StateFailed
 		st.Message = err.Error()
 		return
@@ -184,7 +245,7 @@ func (s *Service) Get(id string) (Status, bool) {
 	if !ok {
 		return Status{}, false
 	}
-	return *st, true
+	return snapshot(st), true
 }
 
 // Latest returns the most recent run, which is what a freshly loaded page needs.
@@ -195,5 +256,18 @@ func (s *Service) Latest() (Status, bool) {
 	if !ok {
 		return Status{}, false
 	}
-	return *st, true
+	return snapshot(st), true
+}
+
+// snapshot copies a status by value and fills the read-time clock. Callers hold mu.
+func snapshot(st *Status) Status {
+	out := *st
+	if st.State == StateRunning || st.State == StateQueued {
+		if started, err := time.Parse(time.RFC3339, st.StartedAt); err == nil {
+			if ms := time.Since(started).Milliseconds(); ms > 0 {
+				out.ElapsedMS = int(ms)
+			}
+		}
+	}
+	return out
 }

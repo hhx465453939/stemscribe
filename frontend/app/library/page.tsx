@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePrefs } from "../components/Providers";
-import { formatDuration, listLibrary, type LibraryItemView } from "@/lib/api";
+import { formatDuration, listLibrary, shell, type LibraryItemView } from "@/lib/api";
 
 export default function LibraryPage() {
   const { t } = usePrefs();
   const [items, setItems] = useState<LibraryItemView[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -20,6 +21,17 @@ export default function LibraryPage() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  const openDir = useCallback(async (dir: string) => {
+    const bridge = shell();
+    if (bridge?.OpenFolder) {
+      await bridge.OpenFolder(dir);
+      return;
+    }
+    // Browser shell: copy the path rather than pretend explorer opened.
+    void navigator.clipboard?.writeText(dir);
+    setNotice(dir);
   }, []);
 
   return (
@@ -42,9 +54,13 @@ export default function LibraryPage() {
             <tr>
               <th>{t("library.colTitle")}</th>
               <th>{t("library.colId")}</th>
-              <th className="num">{t("library.colSegments")}</th>
+              <th className="num" style={{ whiteSpace: "nowrap" }}>
+                {t("library.colSegments")}
+              </th>
               <th className="num">{t("library.colDuration")}</th>
+              <th>{t("library.colModel")}</th>
               <th>{t("library.colStatus")}</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -54,17 +70,46 @@ export default function LibraryPage() {
                 <td className="mono">{item.id}</td>
                 <td className="num">{item.segments}</td>
                 <td className="num">{formatDuration(item.duration_ms)}</td>
-                <td>
+                <td className="mono muted">
+                  {item.model_id || "—"}
+                  {item.transcribe_backend ? ` · ${item.transcribe_backend}` : ""}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
                   <span
-                    className={item.status === "done" ? "dot dot--done" : "dot"}
+                    className={
+                      item.status === "done"
+                        ? "dot dot--done"
+                        : item.status === "canceled"
+                          ? "dot dot--queued"
+                          : "dot dot--fail"
+                    }
                     aria-hidden
                   />{" "}
-                  {item.status === "done" ? t("stage.done") : t("stage.failed")}
+                  {item.status === "done"
+                    ? t("stage.done")
+                    : item.status === "canceled"
+                      ? t("stage.canceled")
+                      : t("stage.failed")}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void openDir(item.dir)}
+                    title={item.dir}
+                  >
+                    {t("library.openDir")}
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      ) : null}
+      {notice !== "" ? (
+        <p className="mono muted" style={{ marginTop: "var(--sp-4)" }}>
+          {notice}
+        </p>
       ) : null}
     </>
   );

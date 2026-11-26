@@ -268,6 +268,42 @@ a {
   background-size: 100% 140px;
 }
 
+/* ---------- drop zone ---------- */
+
+/* The staging target: a flat dashed frame, not a card. It receives no glow; the
+   only light on this page belongs to the Start button (single-light rule). */
+.dropzone {
+  border: 1px dashed var(--line-hi);
+  border-radius: var(--radius);
+  padding: var(--sp-8);
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-3);
+  background: var(--surface);
+  transition: border-color 120ms ease-out;
+}
+
+.dropzone:hover,
+.dropzone:focus-within {
+  border-color: var(--lamp);
+}
+
+.dropzone__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.dropzone__hint {
+  margin: 0;
+}
+
+.manual-paths summary {
+  cursor: pointer;
+}
+
 .row {
   display: flex;
   align-items: center;

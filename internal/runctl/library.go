@@ -28,6 +28,8 @@ type BundleSummary struct {
 	StagesTotal int    `json:"stages_total"`
 	Engine      string `json:"engine"`
 	EngineVer   string `json:"engine_version"`
+	ModelID     string `json:"model_id,omitempty"`
+	Backend     string `json:"transcribe_backend,omitempty"`
 	UpdatedAt   string `json:"updated_at"`
 }
 
@@ -77,6 +79,8 @@ func Library(workdir string) ([]BundleSummary, error) {
 		if eng, ok := meta.Provenance.Engines["transcribe"]; ok {
 			sum.Engine = eng.Name
 			sum.EngineVer = eng.Version
+			sum.ModelID = eng.ModelID
+			sum.Backend = eng.Backend
 		}
 		for _, st := range meta.Stages {
 			sum.StagesTotal++

@@ -5,6 +5,7 @@ import { usePrefs } from "../components/Providers";
 import {
   getInstallStatus,
   listCatalog,
+  shell,
   startInstall,
   type CatalogItemView,
   type CatalogView,
@@ -84,6 +85,16 @@ export default function ModelsPage() {
     if (st) setJob(st);
   }, []);
 
+  const openDir = useCallback(async (dir: string) => {
+    const bridge = shell();
+    if (bridge?.OpenFolder) {
+      await bridge.OpenFolder(dir);
+      return;
+    }
+    void navigator.clipboard?.writeText(dir);
+    setError("");
+  }, []);
+
   const label = (m: CatalogItemView) => t(kindKey[m.kind] ?? "models.kind.stt");
 
   const rows = (items: CatalogItemView[], installed: boolean) => (
@@ -92,9 +103,11 @@ export default function ModelsPage() {
         <tr>
           <th>{t("models.colName")}</th>
           <th>{t("models.colKind")}</th>
+          <th>{t("models.version")}</th>
           <th className="num">{t("models.colSize")}</th>
           <th className="num">{t("models.colVram")}</th>
           <th>{t("models.colLicense")}</th>
+          <th>{t("models.path")}</th>
           <th>{t("models.colState")}</th>
         </tr>
       </thead>
@@ -114,13 +127,44 @@ export default function ModelsPage() {
             <tr key={m.id}>
               <td>{m.name || m.id}</td>
               <td className="mono">{label(m)}</td>
+              <td className="mono muted">{m.version || "—"}</td>
               <td className="num">{m.size_mb > 0 ? `${m.size_mb} MB` : "—"}</td>
               <td className="num">{m.vram_mb > 0 ? `${m.vram_mb} MB` : "—"}</td>
               <td className="mono">{m.license || "—"}</td>
               <td>
+                {m.path ? (
+                  <span
+                    className="mono muted"
+                    title={m.path}
+                    style={{
+                      display: "inline-block",
+                      maxWidth: 220,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      verticalAlign: "bottom",
+                    }}
+                  >
+                    {m.path}
+                  </span>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
+              <td>
                 {installed ? (
                   <>
                     <span className="dot dot--done" aria-hidden /> {t("models.verified")}
+                    {m.path ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ marginLeft: "var(--sp-3)" }}
+                        onClick={() => void openDir(m.path as string)}
+                      >
+                        {t("models.openDir")}
+                      </button>
+                    ) : null}
                   </>
                 ) : (
                   <>

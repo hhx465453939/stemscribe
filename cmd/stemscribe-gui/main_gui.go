@@ -53,6 +53,41 @@ func (a *App) PickFiles() ([]string, error) {
 	})
 }
 
+// FileMeta is what the staging list needs to show a file without touching it.
+// Only the path and the size are read; the media itself is never copied or moved
+// (staging is a list of paths, not a second library).
+type FileMeta struct {
+	Path  string `json:"path"`
+	Size  int64  `json:"size"`
+	Error string `json:"error,omitempty"`
+}
+
+// StatFiles reports size for the dropped/selected paths.
+func (a *App) StatFiles(paths []string) []FileMeta {
+	out := make([]FileMeta, 0, len(paths))
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		switch {
+		case err != nil:
+			out = append(out, FileMeta{Path: p, Error: err.Error()})
+		case info.IsDir():
+			out = append(out, FileMeta{Path: p, Error: "not a file"})
+		default:
+			out = append(out, FileMeta{Path: p, Size: info.Size()})
+		}
+	}
+	return out
+}
+
+// PickFolder opens the native directory picker for the output folder.
+func (a *App) PickFolder(initial string) (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:                "Select output folder",
+		DefaultDirectory:     initial,
+		CanCreateDirectories: true,
+	})
+}
+
 // OpenFolder reveals a bundle in the system file manager.
 func (a *App) OpenFolder(path string) error {
 	if path == "" {
@@ -93,9 +128,9 @@ func main() {
 		AssetServer:      &assetserver.Options{Assets: ui, Handler: handler},
 		OnStartup:        app.startup,
 		Bind:             []any{app},
-		// Dropping files onto the window is a command, not a text fill-in (ADR-040):
-		// the page registers runtime.OnFileDrop and receives absolute paths, then
-		// enqueues them immediately. Wails only forwards OS drops when this is on.
+		// Dropping files onto the window stages them (ADR-042): Wails forwards the
+		// absolute paths, the page lists them, and nothing starts until the user
+		// presses Start. Wails only forwards OS drops when this is on.
 		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
 		Windows: &windows.Options{
 			// Keep the native frame: the UI is a tool window, not a splash screen.

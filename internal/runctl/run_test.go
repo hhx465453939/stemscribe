@@ -67,7 +67,7 @@ func TestNextSmallerInstalledWalksTheLadder(t *testing.T) {
 // as different processes with different versions.
 func TestBuildMetaKeepsEngineVersionsSeparate(t *testing.T) {
 	meta := BuildMeta("v1", "t", "C:\\in.mp4", "done",
-		"whisper.cpp", "1.9.5", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0",
+		"whisper.cpp", "1.9.5", "cuda12", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0",
 		engine.Defaults())
 	sep := meta.Provenance.Engines["separate"]
 	if sep.Version != "0.48.0" {
@@ -76,8 +76,15 @@ func TestBuildMetaKeepsEngineVersionsSeparate(t *testing.T) {
 	if sep.ModelID != "uvr-mdx-kim-vocal-2" {
 		t.Fatalf("separate model = %q", sep.ModelID)
 	}
-	if got := meta.Provenance.Engines["transcribe"].Version; got != "1.9.5" {
-		t.Fatalf("transcribe version = %q", got)
+	if sep.Backend != "cpu" {
+		t.Fatalf("separate backend = %q want cpu (onnxruntime)", sep.Backend)
+	}
+	tr := meta.Provenance.Engines["transcribe"]
+	if tr.Version != "1.9.5" {
+		t.Fatalf("transcribe version = %q", tr.Version)
+	}
+	if tr.Backend != "cuda12" {
+		t.Fatalf("transcribe backend = %q want cuda12", tr.Backend)
 	}
 }
 

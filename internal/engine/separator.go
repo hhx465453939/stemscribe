@@ -146,14 +146,14 @@ func writeIfChanged(path string, want []byte) error {
 // Engine port. It produces the two stems and the 16 kHz mono copy that whisper
 // actually consumes.
 type Separator struct {
-	Python     string // python.exe of the environment that has audio-separator
-	Helper     string // helper.py written by EnsureSeparatorAssets
-	MetaDir    string
-	ModelDir   string // directory holding the weights and the UVR metadata
-	ModelFile  string // weight filename, e.g. Kim_Vocal_2.onnx
-	FFmpegExe  string
-	Version    string // audio-separator version, recorded in provenance
-	Log        *os.File
+	Python    string // python.exe of the environment that has audio-separator
+	Helper    string // helper.py written by EnsureSeparatorAssets
+	MetaDir   string
+	ModelDir  string // directory holding the weights and the UVR metadata
+	ModelFile string // weight filename, e.g. Kim_Vocal_2.onnx
+	FFmpegExe string
+	Version   string // audio-separator version, recorded in provenance
+	Log       *os.File
 
 	exec execWithEnvFunc
 }
@@ -171,6 +171,8 @@ func (s *Separator) runner() execWithEnvFunc {
 // to ffmpeg by name, so the ffmpeg directory has to be on the child's PATH.
 func runWithEnv(ctx context.Context, exe string, args, env []string, onLine func(string)) ([]byte, string, error) {
 	cmd := exec.CommandContext(ctx, exe, args...)
+	// Python spawns ffmpeg; stopping the run must take the whole tree down.
+	wireCancel(cmd)
 	cmd.Env = env
 
 	var stdout strings.Builder

@@ -28,13 +28,19 @@ func BackendPreference(preferred registry.Backend) []registry.Backend {
 	}
 }
 
-// BackendFor picks the backend that will actually be used.
-//
-// Hardware capability alone is not enough: a machine with an NVIDIA GPU but only
-// the cpu runtime installed must still run. The installed set is therefore
-// consulted, and any fallback is named in the reason so the UI can show why the
-// GPU is idle (ADR-004: no silent downgrade).
-func BackendFor(locked, workdir string) (registry.Backend, string) {
+// BackendStatus is the backend a run would actually use, with the evidence the UI
+// needs to explain a downgrade. One struct so `probe`, /api/capabilities and a run's
+// provenance cannot disagree about what happened.
+type BackendStatus struct {
+	Backend        registry.Backend
+	Reason         string
+	RuntimeVersion string
+	Installed      bool
+}
+
+// BackendReport resolves the backend from hardware preference AND the installed
+// runtimes, and names the runtime version when one exists.
+func BackendReport(locked, workdir string) BackendStatus {
 	probe := resource.NewProbe()
 	hw := resource.Hardware{}
 	if total, err := probe.TotalMB(); err == nil && total > 0 {
@@ -57,14 +63,34 @@ func BackendFor(locked, workdir string) (registry.Backend, string) {
 	}
 
 	for _, candidate := range BackendPreference(preferred) {
-		if _, ok := engine.FindRuntime(workdir, candidate); ok {
-			if candidate == preferred {
-				return candidate, sel.Reason
+		if rt, ok := engine.FindRuntime(workdir, candidate); ok {
+			reason := sel.Reason
+			if candidate != preferred {
+				reason = fmt.Sprintf("%s is preferred but its runtime is not installed; using %s", preferred, candidate)
 			}
-			return candidate, fmt.Sprintf("%s preferred but not installed; using %s", preferred, candidate)
+			return BackendStatus{
+				Backend:        candidate,
+				Reason:         reason,
+				RuntimeVersion: rt.Version,
+				Installed:      true,
+			}
 		}
 	}
-	return preferred, sel.Reason + "; no runtime installed yet"
+	return BackendStatus{
+		Backend: preferred,
+		Reason:  sel.Reason + "; no whisper runtime is installed yet",
+	}
+}
+
+// BackendFor picks the backend that will actually be used.
+//
+// Hardware capability alone is not enough: a machine with an NVIDIA GPU but only
+// the cpu runtime installed must still run. The installed set is therefore
+// consulted, and any fallback is named in the reason so the UI can show why the
+// GPU is idle (ADR-004: no silent downgrade).
+func BackendFor(locked, workdir string) (registry.Backend, string) {
+	st := BackendReport(locked, workdir)
+	return st.Backend, st.Reason
 }
 
 // BuildEngine assembles the pipeline engine.
@@ -245,8 +271,9 @@ func copyFile(src, dst string) error {
 
 // BuildMeta assembles the bundle metadata, including a truthful provenance record.
 // modelID and sepModelID are recorded because a transcript without them cannot be
-// reproduced or compared (AC-01/AC-03).
-func BuildMeta(videoID, title, inputPath, status, engName, engVersion, modelID, sepModelID, sepVersion string, params engine.WhisperParams) store.Meta {
+// reproduced or compared (AC-01/AC-03). backend is the runtime that actually ran;
+// leaving it out made "which backend produced this?" unanswerable after the fact.
+func BuildMeta(videoID, title, inputPath, status, engName, engVersion, backend, modelID, sepModelID, sepVersion string, params engine.WhisperParams) store.Meta {
 	if title == "" {
 		title = filepath.Base(inputPath)
 	}
@@ -255,12 +282,13 @@ func BuildMeta(videoID, title, inputPath, status, engName, engVersion, modelID, 
 		hash = "engine-defaults"
 	}
 	engines := map[string]store.EngineInfo{
-		"transcribe": {Name: engName, Version: engVersion, ModelID: modelID},
+		"transcribe": {Name: engName, Version: engVersion, Backend: backend, ModelID: modelID},
 	}
 	if sepModelID != "" {
 		// The separator runs in its own Python environment: recording the whisper
-		// version here would be a provenance lie.
-		engines["separate"] = store.EngineInfo{Name: "uvr5", Version: sepVersion, ModelID: sepModelID}
+		// version here would be a provenance lie. Its backend is the CPU onnxruntime
+		// we install; saying "cuda12" here would be a second lie.
+		engines["separate"] = store.EngineInfo{Name: "uvr5", Version: sepVersion, Backend: "cpu", ModelID: sepModelID}
 	}
 	return store.Meta{
 		VideoID: videoID,

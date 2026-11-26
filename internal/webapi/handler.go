@@ -10,7 +10,6 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/engine"
@@ -88,7 +87,25 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 	})
 
 	mux.HandleFunc("/api/runs/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/api/runs/")
+		rest := strings.TrimPrefix(r.URL.Path, "/api/runs/")
+		if id, ok := strings.CutSuffix(rest, "/cancel"); ok {
+			if r.Method != http.MethodPost {
+				writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
+				return
+			}
+			switch err := svc.Cancel(id); err {
+			case nil:
+				writeJSON(w, http.StatusAccepted, map[string]string{"state": "stopping"})
+			case runctl.ErrRunNotFound:
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			case runctl.ErrNotRunning:
+				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			default:
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			return
+		}
+		id := rest
 		if id == "" || strings.Contains(id, "/") {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad run id"})
 			return
@@ -171,14 +188,15 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 				return
 			}
 			if body.OutputDir != nil {
-				// Refuse a path that cannot be created rather than failing at run time with
-				// the work already half done.
+				// Refuse a path that cannot be created or written rather than failing at
+				// run time with separation already done. MkdirAll alone is not enough on
+				// Windows: an existing read-only folder passes it and fails on first write.
 				dir := strings.TrimSpace(*body.OutputDir)
-				if dir != "" {
-					if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot use that folder: " + mkErr.Error()})
-						return
-					}
+				if mkErr := runctl.CheckOutputDir(dir); mkErr != nil {
+					// CheckOutputDir's message already says what is wrong and why; adding a
+					// second prefix produced "cannot use that folder: cannot use that folder".
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": mkErr.Error()})
+					return
 				}
 				settings.OutputDir = dir
 			}
@@ -218,11 +236,15 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}
+			if err := runctl.CheckOutputDir(req.OutputDir); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
 			added, rejected := q.Enqueue(req.Inputs, runctl.Options{
-				ModelID:   req.Model,
-				Params:    params,
-				OutputDir: req.OutputDir,
-				Engine:    "auto",
+				ModelID:    req.Model,
+				Params:     params,
+				OutputDir:  req.OutputDir,
+				Engine:     "auto",
 				DurationMS: 30000,
 			})
 			writeJSON(w, http.StatusAccepted, map[string]any{"added": len(added), "total": q.Snapshot().Total, "rejected": rejected})
@@ -232,7 +254,31 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 	})
 
 	mux.HandleFunc("/api/queue/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/api/queue/")
+		rest := strings.TrimPrefix(r.URL.Path, "/api/queue/")
+		// POST /api/queue/{id}/stop cancels the running item; DELETE is still the
+		// "remove a waiting item" verb and stays untouched.
+		if id, ok := strings.CutSuffix(rest, "/stop"); ok {
+			if r.Method != http.MethodPost {
+				writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
+				return
+			}
+			if id == "" || strings.Contains(id, "/") {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown queue item"})
+				return
+			}
+			switch err := q.Stop(id); err {
+			case nil:
+				writeJSON(w, http.StatusAccepted, map[string]string{"state": "stopping"})
+			case runctl.ErrQueueNotRunning:
+				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			case runctl.ErrQueueNotFound:
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			default:
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			return
+		}
+		id := rest
 		if r.Method != http.MethodDelete || id == "" {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use DELETE /api/queue/{id}"})
 			return

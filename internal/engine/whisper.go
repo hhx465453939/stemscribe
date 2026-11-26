@@ -61,6 +61,7 @@ func (w *Whisper) runner() ExecFunc {
 // holding VRAM as an orphan (AC-08).
 func defaultExec(ctx context.Context, exe string, args []string, onLine func(string)) ([]byte, string, error) {
 	cmd := exec.CommandContext(ctx, exe, args...)
+	wireCancel(cmd)
 
 	var stdout strings.Builder
 	cmd.Stdout = &stdout

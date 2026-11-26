@@ -12,10 +12,11 @@ import (
 type QueueState string
 
 const (
-	QueueWaiting QueueState = "waiting"
-	QueueRunning QueueState = "running"
-	QueueDone    QueueState = "done"
-	QueueFailed  QueueState = "failed"
+	QueueWaiting  QueueState = "waiting"
+	QueueRunning  QueueState = "running"
+	QueueDone     QueueState = "done"
+	QueueFailed   QueueState = "failed"
+	QueueCanceled QueueState = "canceled"
 )
 
 // Runner is the slice of Service the queue needs. Keeping it an interface means the
@@ -24,6 +25,7 @@ const (
 type Runner interface {
 	Start(Options) (string, error)
 	Get(id string) (Status, bool)
+	Cancel(id string) error
 }
 
 // QueueItem is one queued file.
@@ -36,6 +38,13 @@ type QueueItem struct {
 	Segments    int        `json:"segments"`
 	ArtifactDir string     `json:"artifact_dir"`
 	Message     string     `json:"message"`
+	// Stage and ElapsedMS mirror the live run so the row can say "separating ·
+	// 12:03" instead of only a percentage.
+	Stage     string `json:"stage,omitempty"`
+	ElapsedMS int    `json:"elapsed_ms"`
+	// Stopping is true after a stop was requested and before the process tree is
+	// gone; the button uses it to disable itself instead of firing twice.
+	Stopping bool `json:"stopping,omitempty"`
 	// Warnings carries machine codes the UI must surface on this row (for example
 	// MODEL_SUBSTITUTED when the requested model was not installed). Without this
 	// the substitution only existed in a log the row never showed.
@@ -152,7 +161,12 @@ func (q *Queue) run(item *QueueItem, opts Options) {
 	}
 	q.mu.Lock()
 	item.RunID = runID
+	stopping := item.Stopping
 	q.mu.Unlock()
+	if stopping {
+		// A stop arrived between "running" and the run id being known; honour it now.
+		_ = q.runner.Cancel(runID)
+	}
 
 	for {
 		st, ok := q.runner.Get(runID)
@@ -167,6 +181,8 @@ func (q *Queue) run(item *QueueItem, opts Options) {
 		item.Percent = st.Percent
 		item.Segments = st.Segments
 		item.ArtifactDir = st.ArtifactDir
+		item.Stage = st.Stage
+		item.ElapsedMS = st.ElapsedMS
 		item.Warnings = warningCodes(st.Events)
 		q.mu.Unlock()
 
@@ -175,12 +191,23 @@ func (q *Queue) run(item *QueueItem, opts Options) {
 			q.mu.Lock()
 			item.State = QueueDone
 			item.Percent = 100
+			item.Stage = ""
+			q.mu.Unlock()
+			return
+		case StateCanceled:
+			q.mu.Lock()
+			item.State = QueueCanceled
+			item.Stopping = false
+			item.Stage = ""
+			// The message is not surfaced for a cancel: "stopped by user" under a
+			// "Stopped" label is noise. Keep whatever the run wrote for the record.
 			q.mu.Unlock()
 			return
 		case StateFailed:
 			q.mu.Lock()
 			item.State = QueueFailed
 			item.Message = st.Message
+			item.Stage = ""
 			q.mu.Unlock()
 			return
 		}
@@ -239,8 +266,40 @@ func (q *Queue) Snapshot() QueueStatus {
 // ErrQueueRunning refuses to drop an item that is already executing.
 var ErrQueueRunning = fmt.Errorf("item is running; cannot remove")
 
+// ErrQueueNotRunning is returned when a stop targets an item that is not running.
+var ErrQueueNotRunning = fmt.Errorf("item is not running")
+
 // ErrQueueNotFound is returned for an unknown id.
 var ErrQueueNotFound = fmt.Errorf("queue item not found")
+
+// Stop cancels the running item. The item stays in the list with state canceled
+// once the run settles, and the worker continues with the next waiting item.
+func (q *Queue) Stop(id string) error {
+	q.mu.Lock()
+	for _, it := range q.items {
+		if it.ID != id {
+			continue
+		}
+		if it.State != QueueRunning {
+			q.mu.Unlock()
+			return ErrQueueNotRunning
+		}
+		if it.Stopping {
+			q.mu.Unlock()
+			return nil // idempotent: a second click must not stack cancels
+		}
+		it.Stopping = true
+		runID := it.RunID
+		q.mu.Unlock()
+		if runID == "" {
+			// run() will see Stopping and cancel as soon as Start returns the id.
+			return nil
+		}
+		return q.runner.Cancel(runID)
+	}
+	q.mu.Unlock()
+	return ErrQueueNotFound
+}
 
 // Remove drops a waiting item. Running items are refused rather than killed: an
 // interrupted transcription leaves a half-written bundle, which is worse than making

@@ -1,6 +1,8 @@
 package runctl
 
 import (
+	"path/filepath"
+
 	"github.com/hhx465453939/stemscribe/internal/engine"
 	"github.com/hhx465453939/stemscribe/internal/registry"
 )
@@ -18,6 +20,11 @@ type CatalogItem struct {
 	SizeMB    int    `json:"size_mb"`
 	VRAMMB    int    `json:"vram_mb"`
 	Installed bool   `json:"installed"`
+	// Version and Path exist so the Models page can answer "where is it and what
+	// is it?" without guessing. Path is the install directory, and is only set
+	// when the item is actually installed.
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 // Catalog is the split the model centre renders.
@@ -41,7 +48,7 @@ func CatalogNow(workdir string) (Catalog, error) {
 	out := Catalog{Installed: []CatalogItem{}, Available: []CatalogItem{}}
 
 	for _, m := range reg.Models {
-		_, ok := engine.FindModel(workdir, reg, m.ID)
+		path, ok := engine.FindModel(workdir, reg, m.ID)
 		item := CatalogItem{
 			ID:        m.ID,
 			Name:      m.DisplayName,
@@ -51,8 +58,10 @@ func CatalogNow(workdir string) (Catalog, error) {
 			SizeMB:    m.DiskAfterInstallMB,
 			VRAMMB:    m.VRAMEstimateMB,
 			Installed: ok,
+			Version:   m.Quantization,
 		}
 		if ok {
+			item.Path = filepath.Dir(path)
 			out.Installed = append(out.Installed, item)
 		} else {
 			out.Available = append(out.Available, item)
@@ -72,6 +81,11 @@ func CatalogNow(workdir string) (Catalog, error) {
 			License:   "MIT",
 			SizeMB:    1040, // measured on a clean venv with audio-separator[cpu]
 			Installed: sepOK,
+			Version:   engine.SeparatorVersion(workdir),
+			Path:      filepath.Join(workdir, "runtimes", "separator"),
+		}
+		if !sepOK {
+			sep.Path = ""
 		}
 		if sepOK {
 			out.Installed = append(out.Installed, sep)
@@ -86,12 +100,16 @@ func CatalogNow(workdir string) (Catalog, error) {
 		// present and the other as missing. ffmpeg already has a precise finder; the
 		// rest are matched on product id, not on the backend they happen to share.
 		var ok bool
+		var root string
 		if r.Engine == "ffmpeg" {
-			_, ok = engine.FindFFmpeg(workdir)
-		} else {
-			// After ffmpeg is handled by its own finder, every remaining backend belongs
-			// to exactly one whisper build, so a backend lookup is unambiguous.
-			_, ok = engine.FindRuntime(workdir, r.Backend)
+			var exe string
+			exe, ok = engine.FindFFmpeg(workdir)
+			if ok {
+				root = filepath.Dir(exe)
+			}
+		} else if rt, found := engine.FindRuntime(workdir, r.Backend); found {
+			ok = true
+			root = rt.Root
 		}
 		item := CatalogItem{
 			ID:        r.ID,
@@ -100,8 +118,10 @@ func CatalogNow(workdir string) (Catalog, error) {
 			License:   r.License.SPDX,
 			VRAMMB:    r.VRAMOverheadMB,
 			Installed: ok,
+			Version:   r.Version,
 		}
 		if ok {
+			item.Path = root
 			out.Installed = append(out.Installed, item)
 		} else {
 			out.Available = append(out.Available, item)

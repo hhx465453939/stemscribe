@@ -39,6 +39,27 @@ func TestCatalogOffersSeparatorRuntime(t *testing.T) {
 	}
 }
 
+func TestCatalogInstalledRuntimeExposesPathAndVersion(t *testing.T) {
+	wd := t.TempDir()
+	makeRuntime(t, wd, "1.9.5-vulkan")
+
+	cat, err := CatalogNow(wd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := findItem(cat.Installed, "whispercpp-vulkan-win-x64")
+	if item == nil {
+		t.Fatal("installed vulkan runtime missing from catalog")
+	}
+	if item.Version != "1.9.5" {
+		t.Fatalf("version = %q want 1.9.5", item.Version)
+	}
+	want := filepath.Join(wd, "runtimes", "whisper", "1.9.5-vulkan")
+	if item.Path != want {
+		t.Fatalf("path = %q want %q", item.Path, want)
+	}
+}
+
 func findItem(items []CatalogItem, id string) *CatalogItem {
 	for i := range items {
 		if items[i].ID == id {

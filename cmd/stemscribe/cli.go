@@ -169,20 +169,22 @@ func cmdProbe(args []string) int {
 	totalMB, totalErr := probe.TotalMB()
 	freeMB, freeErr := probe.FreeMB()
 
-	hw := resource.Hardware{}
-	if totalErr == nil && totalMB > 0 {
-		hw.HasNVIDIA = resource.LooksNVIDIA()
-		hw.DriverMajor = resource.DriverMajor()
-		hw.CUDA12Available = resource.CUDA12Present()
-	}
-	hw.VulkanAvailable = resource.VulkanPresent()
-
-	sel := resource.SelectBackend(hw, resource.Backend(settings.Runtime.LockedBackend))
+	// One source of truth: the same resolver the GUI and a run use. Printing the
+	// hardware preference here made probe say "cuda12" while the run used vulkan,
+	// which is exactly the mismatch this change removes.
+	bs := runctl.BackendReport(string(settings.Runtime.LockedBackend), wd)
 	sched := resource.New(probe, settings.Runtime.ReserveMB)
 	budget, budgetErr := sched.BudgetMB()
 
-	fmt.Printf("backend      : %s\n", sel.Backend)
-	fmt.Printf("reason       : %s\n", sel.Reason)
+	installed := ""
+	if bs.Installed {
+		installed = " (installed " + bs.RuntimeVersion + ")"
+	}
+	fmt.Printf("backend      : %s%s\n", bs.Backend, installed)
+	fmt.Printf("reason       : %s\n", bs.Reason)
+	if name := resource.DeviceName(); name != "" {
+		fmt.Printf("gpu          : %s\n", name)
+	}
 	if totalErr != nil {
 		fmt.Printf("vram total   : unavailable (%v)\n", totalErr)
 	} else {

@@ -32,6 +32,7 @@ func (f *FFmpeg) runner() func(ctx context.Context, exe string, args []string) (
 
 func defaultRun(ctx context.Context, exe string, args []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, exe, args...)
+	wireCancel(cmd)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -77,9 +78,9 @@ func (f *FFmpeg) ToWhisperWAV(ctx context.Context, inPath, outPath string) error
 	args := []string{
 		"-hide_banner", "-nostdin", "-y",
 		"-i", inPath,
-		"-vn",             // drop video
-		"-ac", "1",        // mono
-		"-ar", "16000",    // whisper requires 16 kHz
+		"-vn",      // drop video
+		"-ac", "1", // mono
+		"-ar", "16000", // whisper requires 16 kHz
 		"-c:a", "pcm_s16le",
 		outPath,
 	}

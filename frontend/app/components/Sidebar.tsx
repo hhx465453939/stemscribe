@@ -17,6 +17,8 @@ export function Sidebar() {
   const pathname = usePathname();
   const { t, theme, setTheme, lang, setLang } = usePrefs();
   const [backend, setBackend] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
+  const [gpuName, setGpuName] = useState<string>("");
   const [gpu, setGpu] = useState<boolean | null>(null);
   const [vramTotalMB, setVramTotalMB] = useState(0);
   const [vramFreeMB, setVramFreeMB] = useState(0);
@@ -28,18 +30,34 @@ export function Sidebar() {
     let alive = true;
     fetch("/api/capabilities", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { backend?: string; gpu?: boolean; vram_total_mb?: number; vram_free_mb?: number } | null) => {
-        if (!alive || !d) return;
-        if (d.backend) setBackend(d.backend);
-        if (typeof d.gpu === "boolean") setGpu(d.gpu);
-        if (typeof d.vram_total_mb === "number") setVramTotalMB(d.vram_total_mb);
-        if (typeof d.vram_free_mb === "number") setVramFreeMB(d.vram_free_mb);
-      })
+      .then(
+        (d: {
+          backend?: string;
+          backend_reason?: string;
+          gpu?: boolean;
+          gpu_name?: string;
+          vram_total_mb?: number;
+          vram_free_mb?: number;
+        } | null) => {
+          if (!alive || !d) return;
+          if (d.backend) setBackend(d.backend);
+          if (d.backend_reason) setReason(d.backend_reason);
+          if (d.gpu_name) setGpuName(d.gpu_name);
+          if (typeof d.gpu === "boolean") setGpu(d.gpu);
+          if (typeof d.vram_total_mb === "number") setVramTotalMB(d.vram_total_mb);
+          if (typeof d.vram_free_mb === "number") setVramFreeMB(d.vram_free_mb);
+        },
+      )
       .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
+
+  // "NVIDIA GeForce RTX 3060" -> "RTX 3060": the sidebar has ~110px for this and
+  // the vendor prefix is the same on every NVIDIA machine.
+  const shortGPU = gpuName.replace(/^NVIDIA\s+(GeForce\s+)?/i, "");
+  const backendLabel = backend === "" ? "—" : backend.toUpperCase();
 
   return (
     <aside className="sidebar">
@@ -110,8 +128,11 @@ export function Sidebar() {
               : "—"}
           </span>
         </div>
-        <div className="resource-bar">
-          <span>{backend === "" ? "—" : backend}</span>
+        <div className="resource-bar" title={reason}>
+          <span>
+            {backendLabel}
+            {shortGPU !== "" ? ` · ${shortGPU}` : ""}
+          </span>
           <span>{gpu === true ? t("resource.ready") : t("resource.cpuOnly")}</span>
         </div>
       </div>

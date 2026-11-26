@@ -82,10 +82,14 @@ export interface LibraryItemView {
   id: string;
   title: string;
   status: string;
+  /** Absolute bundle directory. Used by "open folder" and by the API assertion. */
+  dir: string;
   segments: number;
   duration_ms: number;
   engine: string;
   engine_version: string;
+  model_id?: string;
+  transcribe_backend?: string;
 }
 
 /** Real bundles only. An empty array is the truth when nothing has run yet. */
@@ -109,6 +113,10 @@ export interface CatalogItemView {
   size_mb: number;
   vram_mb: number;
   installed: boolean;
+  /** Registry version, or the installed audio-separator version. */
+  version?: string;
+  /** Absolute install directory; only present when installed. */
+  path?: string;
 }
 
 export interface CatalogView {
@@ -162,11 +170,17 @@ export async function getInstallStatus(): Promise<InstallJobView | null> {
 export interface QueueItemView {
   id: string;
   input: string;
-  state: "waiting" | "running" | "done" | "failed";
+  state: "waiting" | "running" | "done" | "failed" | "canceled";
   percent: number;
   segments: number;
   artifact_dir: string;
   message: string;
+  /** Pipeline stage id while running (separate, transcribe, ...). */
+  stage?: string;
+  /** Milliseconds since the run started; 0 when not running. */
+  elapsed_ms?: number;
+  /** True after a stop was requested but before the process tree is gone. */
+  stopping?: boolean;
   /** Machine codes the row must surface, e.g. MODEL_SUBSTITUTED. */
   warnings?: string[];
 }
@@ -226,6 +240,18 @@ export async function removeQueued(id: string): Promise<boolean> {
   }
 }
 
+/** Stops the running item. The row stays visible with state "canceled". */
+export async function stopQueued(id: string): Promise<{ error?: string }> {
+  try {
+    const res = await fetch(`/api/queue/${encodeURIComponent(id)}/stop`, { method: "POST" });
+    if (res.ok) return {};
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { error: body.error || `HTTP ${res.status}` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export interface SettingsView {
   output_dir: string;
   model: string;
@@ -266,6 +292,8 @@ export async function saveSettings(patch: {
 /** Interface a native shell exposes; absent in a plain browser. */
 export interface ShellBridge {
   PickFiles?: () => Promise<string[]>;
+  PickFolder?: (initial?: string) => Promise<string>;
+  StatFiles?: (paths: string[]) => Promise<{ path: string; size: number; error?: string }[]>;
   OpenFolder?: (path: string) => Promise<void>;
 }
 
