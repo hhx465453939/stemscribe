@@ -46,7 +46,43 @@ const (
 type License struct {
 	SPDX string `json:"spdx"`
 	URL  string `json:"url,omitempty"`
-	Note string `json:"note,omitempty"`
+	// NonCommercial marks weights that may not be used commercially. The model
+	// centre has to show that before the install button, not after; a licence
+	// hidden in a note is a licence nobody reads.
+	NonCommercial bool   `json:"nonCommercial,omitempty"`
+	Note          string `json:"note,omitempty"`
+}
+
+// Architecture names the inference stack a separator model runs on. It decides
+// two things that must never be guessed from a filename at run time: which
+// Python inference path audio-separator takes (ONNX Runtime vs PyTorch), and
+// therefore whether the runtime needs the CUDA torch profile.
+type Architecture string
+
+const (
+	ArchitectureMDX      Architecture = "mdx"
+	ArchitectureVR       Architecture = "vr"
+	ArchitectureDemucs   Architecture = "demucs"
+	ArchitectureMDXC     Architecture = "mdxc"
+	ArchitectureRoformer Architecture = "roformer"
+)
+
+// UsesTorch reports whether this architecture runs through PyTorch rather than
+// ONNX Runtime. Everything except MDX-Net does, which is exactly why the torch
+// profile exists: on the CPU torch wheel those models run, just slowly.
+func (a Architecture) UsesTorch() bool {
+	return a != "" && a != ArchitectureMDX
+}
+
+// ParamCaps declares which inference parameters the UI may expose for a model.
+// A parameter that does not exist in an architecture (shifts on MDX, batch size
+// on Demucs) must not be offered -- audio-separator would ignore it and the
+// user would think they changed something.
+type ParamCaps struct {
+	SegmentSize bool `json:"segment_size,omitempty"`
+	Overlap     bool `json:"overlap,omitempty"`
+	Shifts      bool `json:"shifts,omitempty"`
+	BatchSize   bool `json:"batch_size,omitempty"`
 }
 
 // FileRef is one downloadable artifact.
@@ -89,25 +125,31 @@ type Runtime struct {
 
 // Model is a downloadable weight file (no executable code).
 type Model struct {
-	ID                 string   `json:"id"`
-	Family             string   `json:"family"`
-	Engine             Engine   `json:"engine"`
-	DisplayName        string   `json:"display_name"`
-	Langs              []string `json:"langs,omitempty"`
+	ID          string   `json:"id"`
+	Family      string   `json:"family"`
+	Engine      Engine   `json:"engine"`
+	DisplayName string   `json:"display_name"`
+	Langs       []string `json:"langs,omitempty"`
 	// Stems is what a separator model can actually output. MDX-Net and VR are
-	// two-stem (vocals/instrumental); Demucs is four. A global on/off switch cannot
-	// express that, which is why the capability lives on the model (ADR-019).
-	Stems              []string `json:"stems,omitempty"`
+	// two-stem (vocals/instrumental); Demucs is four, htdemucs_6s is six. A global
+	// on/off switch cannot express that, which is why the capability lives on the
+	// model (ADR-019).
+	Stems []string `json:"stems,omitempty"`
+	// Architecture picks the inference stack (ONNX vs torch) and constrains which
+	// files a model may ship; see validateModel.
+	Architecture Architecture `json:"architecture,omitempty"`
+	// Params lists the inference knobs this model's architecture actually honours.
+	Params             ParamCaps `json:"params,omitempty"`
 	Files              []FileRef `json:"files"`
-	VRAMEstimateMB     int      `json:"vram_estimate_mb"`
-	RAMEstimateMB      int      `json:"ram_estimate_mb,omitempty"`
-	DiskAfterInstallMB int      `json:"disk_after_install_mb"`
-	QualityTier        string   `json:"quality_tier"`
-	SegmentDefaultS    int      `json:"segment_default_s,omitempty"`
-	Quantization       string   `json:"quantization,omitempty"`
-	License            License  `json:"license"`
-	Source             string   `json:"source"`
-	Notes              string   `json:"notes,omitempty"`
+	VRAMEstimateMB     int       `json:"vram_estimate_mb"`
+	RAMEstimateMB      int       `json:"ram_estimate_mb,omitempty"`
+	DiskAfterInstallMB int       `json:"disk_after_install_mb"`
+	QualityTier        string    `json:"quality_tier"`
+	SegmentDefaultS    int       `json:"segment_default_s,omitempty"`
+	Quantization       string    `json:"quantization,omitempty"`
+	License            License   `json:"license"`
+	Source             string    `json:"source"`
+	Notes              string    `json:"notes,omitempty"`
 }
 
 // Registry is the parsed catalog.
@@ -120,17 +162,17 @@ type Registry struct {
 }
 
 var (
-	sha256Re   = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	sha256Re = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	// Versions are either semver or an upstream build id: ffmpeg publishes
 	// N-129046 rather than a semver, and refusing it would mean either lying about
 	// the version or not shipping ffmpeg at all. Kept bounded so junk still fails.
-	versionRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,31}$`)
-	httpURLRe  = regexp.MustCompile(`^https?://`)
-	relPathRe  = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
-	platforms  = map[string]bool{"windows-x64": true, "windows-arm64": true, "darwin-arm64": true, "linux-x64": true}
-	backends   = map[Backend]bool{BackendCUDA12: true, BackendCUDA11: true, BackendVulkan: true, BackendDirectML: true, BackendCPU: true, BackendNone: true}
-	engines    = map[Engine]bool{EngineWhisper: true, EngineSeparator: true, EngineFFmpeg: true}
-	tiers      = map[string]bool{"light": true, "balanced": true, "max": true}
+	versionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,31}$`)
+	httpURLRe = regexp.MustCompile(`^https?://`)
+	relPathRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+	platforms = map[string]bool{"windows-x64": true, "windows-arm64": true, "darwin-arm64": true, "linux-x64": true}
+	backends  = map[Backend]bool{BackendCUDA12: true, BackendCUDA11: true, BackendVulkan: true, BackendDirectML: true, BackendCPU: true, BackendNone: true}
+	engines   = map[Engine]bool{EngineWhisper: true, EngineSeparator: true, EngineFFmpeg: true}
+	tiers     = map[string]bool{"light": true, "balanced": true, "max": true}
 )
 
 // Parse decodes and validates a catalog.
@@ -289,7 +331,10 @@ func validateModel(m Model) error {
 		if len(m.Stems) < 2 {
 			return fmt.Errorf("separator models must declare at least two stems, got %d", len(m.Stems))
 		}
-		valid := map[string]bool{"vocals": true, "instrumental": true, "drums": true, "bass": true, "other": true}
+		valid := map[string]bool{
+			"vocals": true, "instrumental": true, "drums": true,
+			"bass": true, "other": true, "guitar": true, "piano": true,
+		}
 		for _, s := range m.Stems {
 			if !valid[s] {
 				return fmt.Errorf("unknown stem %q", s)
@@ -297,6 +342,9 @@ func validateModel(m Model) error {
 		}
 		if !contains(m.Stems, "vocals") {
 			return fmt.Errorf("separator models must include the vocals stem")
+		}
+		if err := validateArchitecture(m); err != nil {
+			return err
 		}
 	}
 	if m.DisplayName == "" {
@@ -332,6 +380,69 @@ func validateModel(m Model) error {
 		return fmt.Errorf("source must be an http(s) URL")
 	}
 	return nil
+}
+
+// validateArchitecture keeps the declared stack and the shipped files in sync.
+//
+// A model whose files cannot be loaded by its declared architecture fails at the
+// end of a 2 GB install, inside a Python traceback the user cannot act on. The
+// rule is cheap here and turns that into a catalog error caught by tests.
+func validateArchitecture(m Model) error {
+	if m.Architecture == "" {
+		return fmt.Errorf("separator models must declare architecture (mdx/vr/demucs/mdxc/roformer)")
+	}
+	var yaml, th, onnx, pth, ckpt int
+	for _, f := range m.Files {
+		switch strings.ToLower(filepathExt(f.Dest)) {
+		case ".yaml", ".yml":
+			yaml++
+		case ".th":
+			th++
+		case ".onnx":
+			onnx++
+		case ".pth":
+			pth++
+		case ".ckpt":
+			ckpt++
+		}
+	}
+	total := len(m.Files)
+	switch m.Architecture {
+	case ArchitectureMDX:
+		if onnx != total {
+			return fmt.Errorf("mdx models must ship only .onnx files, got %d of %d", onnx, total)
+		}
+	case ArchitectureVR:
+		if pth != total {
+			return fmt.Errorf("vr models must ship only .pth files, got %d of %d", pth, total)
+		}
+	case ArchitectureDemucs:
+		// Demucs identifies a bag by its YAML and resolves the .th files from the
+		// names inside it; a bag without either half loads nothing.
+		if yaml != 1 || th < 1 || yaml+th != total {
+			return fmt.Errorf("demucs models must ship exactly one .yaml plus one or more .th files")
+		}
+	case ArchitectureMDXC:
+		if ckpt != 1 || ckpt+yaml != total {
+			return fmt.Errorf("mdxc models must ship one .ckpt plus optional .yaml configs")
+		}
+	case ArchitectureRoformer:
+		if ckpt+pth == 0 || ckpt+pth+yaml != total {
+			return fmt.Errorf("roformer models must ship a .ckpt/.pth plus optional .yaml configs")
+		}
+	default:
+		return fmt.Errorf("unknown architecture %q", m.Architecture)
+	}
+	return nil
+}
+
+// filepathExt is filepath.Ext without importing path/filepath for one call;
+// dest paths are slash-separated by validation.
+func filepathExt(p string) string {
+	if i := strings.LastIndexByte(p, '.'); i >= 0 && !strings.ContainsAny(p[i:], "/\\") {
+		return p[i:]
+	}
+	return ""
 }
 
 // FindModel returns the model with the given id.

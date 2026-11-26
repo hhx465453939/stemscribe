@@ -151,6 +151,11 @@
         "note": {
           "type": "string",
           "maxLength": 300
+        },
+        "nonCommercial": {
+          "type": "boolean",
+          "default": false,
+          "description": "Weights that may not be used commercially (e.g. Demucs: code MIT, weights research-only). The model centre marks these before install."
         }
       }
     },
@@ -283,10 +288,31 @@
           },
           "maxItems": 32
         },
+        "architecture": {
+          "enum": [
+            "mdx",
+            "vr",
+            "demucs",
+            "mdxc",
+            "roformer"
+          ],
+          "description": "Inference stack. Required for family=separator: it decides ONNX vs torch, the parameter dictionary, and which files the manifest may contain (Demucs needs one YAML plus its .th)."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "segment_size": { "type": "boolean" },
+            "overlap": { "type": "boolean" },
+            "shifts": { "type": "boolean" },
+            "batch_size": { "type": "boolean" }
+          },
+          "description": "Knobs the architecture actually honours. A parameter that is false must not be offered in the UI: audio-separator would ignore it."
+        },
         "stems": {
           "type": "array",
           "minItems": 2,
-          "maxItems": 4,
+          "maxItems": 6,
           "uniqueItems": true,
           "items": {
             "enum": [
@@ -294,10 +320,12 @@
               "instrumental",
               "drums",
               "bass",
-              "other"
+              "other",
+              "guitar",
+              "piano"
             ]
           },
-          "description": "Actual outputs of a separator model. MDX/VR = 2, Demucs = 4. Required for family=separator (ADR-019)."
+          "description": "Actual outputs of a separator model. MDX/VR = 2, Demucs = 4, htdemucs_6s = 6. Required for family=separator (ADR-019)."
         },
         "files": {
           "type": "array",
@@ -352,7 +380,7 @@
         },
         "notes": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 800
         }
       },
       "allOf": [

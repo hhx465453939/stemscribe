@@ -234,40 +234,309 @@
       "notes": "Needs a 12 GB class GPU. Size and sha256 measured on 2026-11-26 from hf-mirror (ETag matched the computed digest)."
     },
     {
-      "id": "uvr-vr-hp2-vocals",
+      "id": "uvr-vr-karaoke",
       "family": "separator",
       "engine": "separator",
-      "display_name": "VR · HP2 all vocals",
+      "display_name": "VR · 5_HP-Karaoke-UVR",
+      "architecture": "vr",
+      "params": {
+        "batch_size": true
+      },
       "files": [
         {
-          "url": "https://hf-mirror.com/lj1995/VoiceConversionWebUI/resolve/main/uvr5_weights/HP2_all_vocals.pth",
-          "size": 63454827,
-          "sha256": null,
-          "tbd": true,
-          "dest": "HP2_all_vocals.pth"
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/5_HP-Karaoke-UVR.pth",
+          "size": 126782699,
+          "sha256": "fe00891defbb61f4261500af22f7624f1a3df8dc75fa3998d1aece02e6be4537",
+          "dest": "5_HP-Karaoke-UVR.pth"
         }
       ],
       "stems": [
         "vocals",
         "instrumental"
       ],
-      "vram_estimate_mb": 1500,
-      "ram_estimate_mb": 1200,
-      "disk_after_install_mb": 61,
+      "vram_estimate_mb": 1800,
+      "ram_estimate_mb": 1600,
+      "disk_after_install_mb": 121,
+      "quality_tier": "max",
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui",
+        "note": "Weights are distributed by the Ultimate Vocal Remover project; upstream states no separate licence for the weights, so commercial use needs the user's own clearance."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Replaces uvr-vr-hp2-vocals, which audio-separator cannot load: the VR path identifies parameters by the MD5 of the file's last 10,240,000 bytes and HP2_all_vocals.pth is absent from both the pinned vr_model_data.json and the upstream copy in the mirror (load_model raises \"Unsupported Model File\"). This model's tail MD5 is present in the pinned data, so it loads offline. Size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json. VR family is two-stem; VRAM is an estimate (VR keeps a single model resident)."
+    },
+    {
+      "id": "mdx-inst-hq3",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "UVR5 · MDX-NET Inst HQ 3",
+      "architecture": "mdx",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "batch_size": true
+      },
+      "stems": [
+        "vocals",
+        "instrumental"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/UVR-MDX-NET-Inst_HQ_3.onnx",
+          "size": 66759214,
+          "sha256": "317554b07fe1ea5279a77f2b1520a41ea4b93432560c4ffd08792c30fddf9adc",
+          "dest": "UVR-MDX-NET-Inst_HQ_3.onnx"
+        }
+      ],
+      "vram_estimate_mb": 2300,
+      "ram_estimate_mb": 3200,
+      "disk_after_install_mb": 64,
+      "quality_tier": "max",
+      "segment_default_s": 15,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui",
+        "note": "Weights are distributed by the Ultimate Vocal Remover project; upstream states no separate licence for the weights, so commercial use needs the user's own clearance."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Instrumental-oriented MDX-Net model, same ONNX Runtime path as Kim Vocal 2 (so the CUDA provider applies without the torch profile). The tail MD5 is present in the pinned mdx_model_data.json, which is what lets it load offline. Size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json. VRAM is an estimate from the Kim Vocal 2 measurement."
+    },
+    {
+      "id": "demucs-htdemucs",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "Demucs v4 · htdemucs (4 stems)",
+      "architecture": "demucs",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "shifts": true
+      },
+      "stems": [
+        "vocals",
+        "drums",
+        "bass",
+        "other"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/htdemucs.yaml",
+          "size": 21,
+          "sha256": "239c445d0b14454d541ad8bd9bb271c9e536d267e8a4625208744cbb2e7bb66c",
+          "dest": "htdemucs.yaml"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/955717e8-8726e21a.th",
+          "size": 84141911,
+          "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+          "dest": "955717e8-8726e21a.th"
+        }
+      ],
+      "vram_estimate_mb": 3800,
+      "ram_estimate_mb": 6000,
+      "disk_after_install_mb": 81,
+      "quality_tier": "balanced",
+      "license": {
+        "spdx": "CC-BY-NC-4.0",
+        "url": "https://github.com/facebookresearch/demucs/blob/main/LICENSE",
+        "nonCommercial": true,
+        "note": "Demucs code is MIT but the pre-trained weights are research-only; the maintainers state commercial use needs a permission (facebookresearch/demucs#327). This flag covers the weights we ship."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Four-stem music separation (vocals/drums/bass/other). The YAML names the .th by prefix, so both files must sit in one directory; load_model is given the YAML. Needs the torch CUDA profile on a GPU (PyPI's Windows torch is CPU-only). Size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json; VRAM 3800 MB is the measured peak of the ft bag model, recorded here as an estimate for the single model."
+    },
+    {
+      "id": "demucs-htdemucs-ft",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "Demucs v4 · htdemucs_ft (4 stems, fine-tuned)",
+      "architecture": "demucs",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "shifts": true
+      },
+      "stems": [
+        "vocals",
+        "drums",
+        "bass",
+        "other"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/htdemucs_ft.yaml",
+          "size": 149,
+          "sha256": "69470b8c1bbd674437b51bc9fb491327a10ab0396b702c93389b9cf750016346",
+          "dest": "htdemucs_ft.yaml"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/f7e0c4bc-ba3fe64a.th",
+          "size": 84141271,
+          "sha256": "ba3fe64ae8ef66ac9a4857222ce48efbdc5eb3ad375cb79dd13debee5aaa4066",
+          "dest": "f7e0c4bc-ba3fe64a.th"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/d12395a8-e57c48e6.th",
+          "size": 84141271,
+          "sha256": "e57c48e6b0e38af4f7118d7bd08c49f0a0c0edf7d09143bdd902ea0d237303e6",
+          "dest": "d12395a8-e57c48e6.th"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/92cfc3b6-ef3bcb9c.th",
+          "size": 84141271,
+          "sha256": "ef3bcb9c8b40d14ae5d51b6db2587339cc12c6b77c0be151ce6d69002e087bf2",
+          "dest": "92cfc3b6-ef3bcb9c.th"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/04573f0d-f3cf25b2.th",
+          "size": 84141271,
+          "sha256": "f3cf25b222c4eed7cd49dd8b2c9597d50c18bd154090f7b919cfa5f93cf22c49",
+          "dest": "04573f0d-f3cf25b2.th"
+        }
+      ],
+      "vram_estimate_mb": 3800,
+      "ram_estimate_mb": 6000,
+      "disk_after_install_mb": 322,
+      "quality_tier": "max",
+      "license": {
+        "spdx": "CC-BY-NC-4.0",
+        "url": "https://github.com/facebookresearch/demucs/blob/main/LICENSE",
+        "nonCommercial": true,
+        "note": "Demucs code is MIT but the pre-trained weights are research-only; the maintainers state commercial use needs a permission (facebookresearch/demucs#327). This flag covers the weights we ship."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Bag of four fine-tuned Demucs models (the YAML lists all four .th), so one separation loads four checkpoints in sequence. Measured on 2026-11-26: a 120 s clip took 50.48 s on an RTX 3060 (RTF 0.42) with 3794 MiB peak VRAM, 7.09x faster than the same clip on the CPU (124.36 s for 30 s versus 17.54 s on the GPU). The vocals stem correlated 0.999973 with the CPU result. All five sha256 match audio-separator's published model-checksums.json."
+    },
+    {
+      "id": "demucs-htdemucs-6s",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "Demucs v4 · htdemucs_6s (6 stems)",
+      "architecture": "demucs",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "shifts": true
+      },
+      "stems": [
+        "vocals",
+        "drums",
+        "bass",
+        "other",
+        "guitar",
+        "piano"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/htdemucs_6s.yaml",
+          "size": 21,
+          "sha256": "207405151270af8fd81c2373c25d27950916682ac91dca7884a11ce13dad6f58",
+          "dest": "htdemucs_6s.yaml"
+        },
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/5c90dfd2-34c22ccb.th",
+          "size": 54996327,
+          "sha256": "34c22ccb381c6f9fdbf324f04e1e2fe21aaaf293f5ded163a162697ff9a02ddd",
+          "dest": "5c90dfd2-34c22ccb.th"
+        }
+      ],
+      "vram_estimate_mb": 3800,
+      "ram_estimate_mb": 6000,
+      "disk_after_install_mb": 53,
+      "quality_tier": "max",
+      "license": {
+        "spdx": "CC-BY-NC-4.0",
+        "url": "https://github.com/facebookresearch/demucs/blob/main/LICENSE",
+        "nonCommercial": true,
+        "note": "Demucs code is MIT but the pre-trained weights are research-only; the maintainers state commercial use needs a permission (facebookresearch/demucs#327). This flag covers the weights we ship."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Six stems: guitar and piano are added on top of the four-stem set and are noticeably weaker than the rest (the model itself documents them as experimental). Size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json. VRAM is an estimate from the ft measurement."
+    },
+    {
+      "id": "mdx-voc-ft",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "UVR5 · MDX-NET Voc FT",
+      "architecture": "mdx",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "batch_size": true
+      },
+      "stems": [
+        "vocals",
+        "instrumental"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/UVR-MDX-NET-Voc_FT.onnx",
+          "size": 66762490,
+          "sha256": "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111",
+          "dest": "UVR-MDX-NET-Voc_FT.onnx"
+        }
+      ],
+      "vram_estimate_mb": 2300,
+      "ram_estimate_mb": 3200,
+      "disk_after_install_mb": 64,
+      "quality_tier": "max",
+      "segment_default_s": 15,
+      "license": {
+        "spdx": "MIT",
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui",
+        "note": "Weights are distributed by the Ultimate Vocal Remover project; upstream states no separate licence for the weights, so commercial use needs the user's own clearance."
+      },
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Vocal fine-tune of the MDX-Net family; the pinned parameters (compensate 1.021, n_fft 7680) differ from Kim Vocal 2, so it is a genuinely different model rather than a re-upload. ONNX Runtime path, so the CUDA provider applies without the torch profile. The tail MD5 is present in the pinned mdx_model_data.json. Size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json."
+    },
+    {
+      "id": "mdx-karaoke",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "UVR5 · MDX-NET Karaoke",
+      "architecture": "mdx",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "batch_size": true
+      },
+      "stems": [
+        "vocals",
+        "instrumental"
+      ],
+      "files": [
+        {
+          "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/UVR_MDXNET_KARA.onnx",
+          "size": 29704436,
+          "sha256": "e3167c87333a48548413e972a286bf40bf5694001d2853861eb1435953f02d63",
+          "dest": "UVR_MDXNET_KARA.onnx"
+        }
+      ],
+      "vram_estimate_mb": 1800,
+      "ram_estimate_mb": 2400,
+      "disk_after_install_mb": 29,
       "quality_tier": "balanced",
       "segment_default_s": 15,
       "license": {
         "spdx": "MIT",
-        "url": "https://github.com/Anjok07/ultimatevocalremovergui"
+        "url": "https://github.com/Anjok07/ultimatevocalremovergui",
+        "note": "Weights are distributed by the Ultimate Vocal Remover project; upstream states no separate licence for the weights, so commercial use needs the user's own clearance."
       },
-      "source": "https://huggingface.co/lj1995/VoiceConversionWebUI",
-      "notes": "URL and byte size verified by HTTP HEAD on hf-mirror. sha256 stays tbd until the file is downloaded, so install refuses it (F-10). VR family is two-stem."
+      "source": "https://huggingface.co/lainlives/audio-separator-models",
+      "notes": "Karaoke variant: the pinned VR/MDX data marks it is_karaoke and it is roughly half the size of the full MDX models. It runs on the ONNX Runtime path, so a user who only installed the 3.7 GB CUDA ONNX profile can do karaoke without the 7.2 GB torch profile. Tail MD5 is present in the pinned mdx_model_data.json; size and sha256 measured from hf-mirror on 2026-11-26 and matched against audio-separator's published model-checksums.json."
     },
     {
       "id": "uvr-mdx-kim-vocal-2",
       "family": "separator",
       "engine": "separator",
       "display_name": "UVR5 · Kim Vocal 2 (MDX-NET)",
+      "architecture": "mdx",
+      "params": {
+        "segment_size": true,
+        "overlap": true,
+        "batch_size": true
+      },
       "stems": [
         "vocals",
         "instrumental"

@@ -176,3 +176,86 @@ func baseCatalog(fileOverride string) string {
 	  }]
 	}`
 }
+
+func TestUsesTorch(t *testing.T) {
+	cases := map[Architecture]bool{
+		ArchitectureMDX:      false,
+		ArchitectureVR:       true,
+		ArchitectureDemucs:   true,
+		ArchitectureMDXC:     true,
+		ArchitectureRoformer: true,
+		"":                   false,
+	}
+	for arch, want := range cases {
+		if got := arch.UsesTorch(); got != want {
+			t.Errorf("%q.UsesTorch() = %v, want %v", arch, got, want)
+		}
+	}
+}
+
+func TestValidateSeparatorArchitecture(t *testing.T) {
+	th := `{"url":"https://example.org/a.th","size":10,"sha256":null,"tbd":true,"dest":"a.th"}`
+	yaml := `{"url":"https://example.org/m.yaml","size":10,"sha256":null,"tbd":true,"dest":"m.yaml"}`
+	onnx := `{"url":"https://example.org/m.onnx","size":10,"sha256":null,"tbd":true,"dest":"m.onnx"}`
+	cases := []struct {
+		name    string
+		arch    string
+		files   []string
+		wantErr bool
+	}{
+		{"demucs yaml+th ok", "demucs", []string{yaml, th}, false},
+		{"demucs onnx rejected", "demucs", []string{onnx}, true},
+		{"demucs missing yaml rejected", "demucs", []string{th}, true},
+		{"mdx onnx ok", "mdx", []string{onnx}, false},
+		{"mdx yaml rejected", "mdx", []string{yaml}, true},
+		{"missing architecture rejected", "", []string{onnx}, true},
+		{"unknown architecture rejected", "spleeter", []string{onnx}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := separatorCatalog(tc.arch, strings.Join(tc.files, ","), `"vocals","instrumental"`)
+			_, err := Parse([]byte(raw))
+			if tc.wantErr && err == nil {
+				t.Fatal("expected rejection")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected rejection: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateDemucsSixStems(t *testing.T) {
+	th := `{"url":"https://example.org/a.th","size":10,"sha256":null,"tbd":true,"dest":"a.th"}`
+	yaml := `{"url":"https://example.org/m.yaml","size":10,"sha256":null,"tbd":true,"dest":"m.yaml"}`
+	raw := separatorCatalog("demucs", yaml+","+th,
+		`"vocals","instrumental","drums","bass","other","guitar","piano"`)
+	if _, err := Parse([]byte(raw)); err != nil {
+		t.Fatalf("six-stem demucs must validate: %v", err)
+	}
+}
+
+// separatorCatalog builds a minimal valid catalog whose single model is a
+// separator model with the given architecture, files and stems.
+func separatorCatalog(arch, files, stems string) string {
+	return `{
+	  "schema":1,
+	  "generated_at":"2026-11-26T00:00:00Z",
+	  "mirrors":[{"id":"official","base_url":"https://example.org/dl","priority":0}],
+	  "runtimes":[{
+	    "id":"rt-1","engine":"whisper","version":"1.0.0","backend":"cpu","platform":"windows-x64",
+	    "archive":{"url":"a.zip","size":10,"sha256":null,"tbd":true,"dest":"a.zip"},
+	    "entrypoint":"whisper-cli.exe","vram_overhead_mb":0,
+	    "license":{"spdx":"MIT"}
+	  }],
+	  "models":[{
+	    "id":"m-1","family":"separator","engine":"separator","display_name":"M1",
+	    "architecture":"` + arch + `",
+	    "files":[` + files + `],
+	    "stems":[` + stems + `],
+	    "vram_estimate_mb":100,"ram_estimate_mb":100,"disk_after_install_mb":10,
+	    "quality_tier":"balanced",
+	    "license":{"spdx":"MIT"},"source":"https://example.org"
+	  }]
+	}`
+}
