@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,13 +28,13 @@ import (
 
 // Error codes are stable identifiers consumed by the UI (ARCHITECTURE.md §7).
 const (
-	CodeHTTP        = "DL_HTTP"
-	CodeNetwork     = "DL_NET"
+	CodeHTTP         = "DL_HTTP"
+	CodeNetwork      = "DL_NET"
 	CodeSizeMismatch = "DL_SIZE_MISMATCH"
-	CodeSHAMismatch = "DL_SHA_MISMATCH"
-	CodeDiskFull    = "DL_DISK_FULL"
-	CodeBadRequest  = "DL_BAD_REQUEST"
-	CodeCanceled    = "DL_CANCELED"
+	CodeSHAMismatch  = "DL_SHA_MISMATCH"
+	CodeDiskFull     = "DL_DISK_FULL"
+	CodeBadRequest   = "DL_BAD_REQUEST"
+	CodeCanceled     = "DL_CANCELED"
 )
 
 // Error is a download failure with a stable code and a human hint.
@@ -117,12 +118,63 @@ func (c *Client) userAgent() string {
 }
 
 // Fetch downloads a.URL to a.DestPath, resuming from a.DestPath+".part" if present.
+//
+// Network interruptions are retried with the backoff PIPELINE.md §6 promises.
+// This is not cosmetic: the CUDA runtime is a 574 MB asset on a link that
+// periodically drops an HTTP/2 stream, and a single PROTOCOL_ERROR used to end
+// the install at 50% with a perfectly resumable .part sitting on disk.
 func (c *Client) Fetch(ctx context.Context, a Artifact, prog Progress) (Result, error) {
-	started := time.Now()
-
 	if err := validateArtifact(a); err != nil {
 		return Result{}, err
 	}
+	var last error
+	for attempt := 0; attempt <= len(fetchBackoff); attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return Result{}, &Error{Code: CodeCanceled, Message: "download canceled", Err: ctx.Err()}
+			case <-time.After(fetchBackoff[attempt-1]):
+			}
+		}
+		res, err := c.fetchOnce(ctx, a, prog)
+		if err == nil {
+			return res, nil
+		}
+		last = err
+		if !retryableDownload(err) || ctx.Err() != nil {
+			return Result{}, err
+		}
+	}
+	return Result{}, last
+}
+
+// fetchBackoff is the delay before each retry: 1s, 4s, 12s (PIPELINE.md §6).
+var fetchBackoff = []time.Duration{time.Second, 4 * time.Second, 12 * time.Second}
+
+// retryableDownload decides whether another attempt can plausibly succeed.
+// A 404/403 will not, and a sha mismatch means the bytes were wrong, not slow.
+func retryableDownload(err error) bool {
+	var de *Error
+	if !errors.As(err, &de) {
+		return false
+	}
+	switch de.Code {
+	case CodeNetwork, CodeSizeMismatch:
+		// Both keep the .part, so the next attempt resumes where this one died.
+		return true
+	}
+	if strings.HasPrefix(de.Code, CodeHTTP+"_") {
+		code, convErr := strconv.Atoi(strings.TrimPrefix(de.Code, CodeHTTP+"_"))
+		if convErr != nil {
+			return false
+		}
+		return code >= 500 || code == http.StatusRequestTimeout || code == http.StatusTooManyRequests
+	}
+	return false
+}
+
+func (c *Client) fetchOnce(ctx context.Context, a Artifact, prog Progress) (Result, error) {
+	started := time.Now()
 
 	partPath := a.DestPath + partSuffix
 	if err := os.MkdirAll(filepath.Dir(a.DestPath), 0o755); err != nil {
@@ -173,7 +225,7 @@ func (c *Client) Fetch(ctx context.Context, a Artifact, prog Progress) (Result, 
 		if rmErr := os.Remove(partPath); rmErr != nil {
 			return Result{}, &Error{Code: CodeBadRequest, Message: "cannot clear partial", Err: rmErr}
 		}
-		return c.Fetch(ctx, a, prog)
+		return c.fetchOnce(ctx, a, prog)
 	default:
 		return Result{}, &Error{
 			Code:    fmt.Sprintf("%s_%d", CodeHTTP, resp.StatusCode),

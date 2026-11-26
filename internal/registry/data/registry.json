@@ -55,10 +55,9 @@
       "backend": "cuda12",
       "platform": "windows-x64",
       "archive": {
-        "url": "runtimes/whisper/1.9.5/win-x64-cuda12.zip",
-        "size": 1,
-        "sha256": null,
-        "tbd": true,
+        "url": "runtime-v1.9.5/whispercpp-1.9.5-cuda12-win-x64.zip",
+        "size": 601795069,
+        "sha256": "f770536717df04b7c17cfbc7bc8590d9262365179995ee401043cf9f4492de7a",
         "dest": "whisper-cli-cuda12.zip"
       },
       "entrypoint": "whisper-cli.exe",

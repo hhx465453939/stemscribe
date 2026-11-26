@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sha256Hex(b []byte) string {
@@ -187,6 +188,7 @@ func TestSHAMismatchDropsPartial(t *testing.T) {
 }
 
 func TestSizeMismatchKeepsPartial(t *testing.T) {
+	noBackoff(t) // 3 retries with real backoff would add 17 s to the suite
 	payload := []byte("short")
 	srv := rangeServer(t, payload, nil)
 	defer srv.Close()
@@ -398,4 +400,97 @@ func asError(err error, target **Error) bool {
 		err = u.Unwrap()
 	}
 	return false
+}
+
+// noBackoff keeps the retry tests fast; the production delays are 1s/4s/12s.
+func noBackoff(t *testing.T) {
+	t.Helper()
+	old := fetchBackoff
+	fetchBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { fetchBackoff = old })
+}
+
+// A dropped HTTP/2 stream (the real failure: PROTOCOL_ERROR from GitHub at 50%)
+// must resume, not report "transfer interrupted" and abandon a valid .part.
+func TestFetchRetriesInterruptedTransfer(t *testing.T) {
+	noBackoff(t)
+	payload := bytes.Repeat([]byte("retry-payload-"), 20000)
+	half := len(payload) / 2
+	attempts := 0
+	var secondRange string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		start := 0
+		if rg := r.Header.Get("Range"); rg != "" {
+			if _, err := fmt.Sscanf(rg, "bytes=%d-", &start); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			secondRange = rg
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
+			w.Header().Set("Content-Length", fmt.Sprint(len(payload)-start))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(payload[start:])
+			return
+		}
+		w.Header().Set("Content-Length", fmt.Sprint(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		if attempts == 1 {
+			// Write less than Content-Length and return: the client sees an
+			// unexpected EOF, exactly like a cut stream.
+			_, _ = w.Write(payload[:half])
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "model.bin")
+	res, err := (&Client{}).Fetch(context.Background(), Artifact{
+		URL:      srv.URL + "/model.bin",
+		DestPath: dest,
+		Size:     int64(len(payload)),
+		SHA256:   sha256Hex(payload),
+	}, nil)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2 (one interrupted + one resumed)", attempts)
+	}
+	if secondRange != fmt.Sprintf("bytes=%d-", half) {
+		t.Errorf("resume Range = %q, want bytes=%d-", secondRange, half)
+	}
+	if !res.Resumed || !res.Verified {
+		t.Errorf("resumed=%v verified=%v, want true/true", res.Resumed, res.Verified)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Error("final file does not match the payload")
+	}
+}
+
+// Retrying a 404 would only waste the user's time; the classification must hold.
+func TestFetchDoesNotRetryNotFound(t *testing.T) {
+	noBackoff(t)
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	_, err := (&Client{}).Fetch(context.Background(), Artifact{
+		URL:      srv.URL + "/missing.zip",
+		DestPath: filepath.Join(t.TempDir(), "missing.zip"),
+	}, nil)
+	if err == nil {
+		t.Fatal("expected an error for 404")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1: a 404 is not retryable", attempts)
+	}
 }

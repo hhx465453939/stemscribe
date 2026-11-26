@@ -24,6 +24,10 @@ on:
         description: 'Also build cuda12 (needs a CUDA-capable runner)'
         type: boolean
         default: false
+      cuda_runner:
+        description: 'Runner label for the cuda12 job (empty = windows-latest)'
+        required: false
+        default: ''
   push:
     tags: ['runtime-v*']
 
@@ -116,7 +120,7 @@ jobs:
     name: build cuda12 (opt-in)
     # Job-level `if` may only use inputs/ref contexts; matrix is not available here.
     if: ${{ inputs.with_cuda }}
-    runs-on: windows-latest
+    runs-on: ${{ inputs.cuda_runner != '' && inputs.cuda_runner || 'windows-latest' }}
     steps:
       - name: Checkout this repository
         uses: actions/checkout@v4
@@ -158,6 +162,7 @@ jobs:
             -DWHISPER_BUILD_TESTS=OFF `
             -DWHISPER_BUILD_SERVER=OFF `
             -DGGML_CUDA=ON -DGGML_VULKAN=OFF `
+            -DCMAKE_CUDA_ARCHITECTURES=52;61;75;86 `
             -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler
 
       - name: Build whisper-cli
@@ -166,7 +171,7 @@ jobs:
 
       - name: Stage and measure
         shell: pwsh
-        run: ./.github/scripts/stage-runtime.ps1 -Backend 'cuda12' -Version '${{ env.WHISPER_VERSION }}'
+        run: ./.github/scripts/stage-runtime.ps1 -Backend 'cuda12' -Version '${{ env.WHISPER_VERSION }}' -CudaBinDir "$env:CUDA_PATH\bin"
 
       - uses: actions/upload-artifact@v4
         with:
