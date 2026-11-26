@@ -1,6 +1,6 @@
 change_id: CHG-0016
 spec_version: 1
-state: GOAL_ACTIVE
+state: CLOSED
 objective: "CUDA 运行时真产出并真被使用；probe/UI/meta 口径一致；首页拖入暂存+开始、输出目录选择/打开、停止任务、资料库与模型中心打开目录；最低操作集写入 UI-DESIGN"
 milestones:
   - id: M0
@@ -46,14 +46,13 @@ milestones:
       - tmp/evidence/chg0016/ui/params.png
   - id: M6
     title: "全量 E2E、Checkfix、文档、CHG 关闭、提交（需 owner 同意）"
-    state: in_progress
+    state: done
     evidence:
       - tmp/evidence/chg0016/ac11-checkfix.txt
-    note: "全量 Checkfix 绿、文档同步完成；AC 全绿，剩 owner 授权后的显式列文件 commit/push"
+    note: "Checkfix 绿、文档同步；owner 2026-11-26 授权后分三个 commit 提交并推送（54ec8b4 / bdd0ff8 / 86a99ba）"
 current_milestone: M6
 evidence: []
-blockers:
-  - "commit/push 需 owner 明确授权（goal-state authorization 均为 false）"
+blockers: []
 authorization:
   commit: true
   push: true

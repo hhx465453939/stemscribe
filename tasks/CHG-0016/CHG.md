@@ -18,7 +18,7 @@
 | 2026-11-26 | approved | owner 明确批准 SPEC，进入 goal-driven 执行（M0→M6） | owner |
 | 2026-11-26 | in_progress | M0–M5 落地并留证；M1 干净 workdir 安装下载中 | agent |
 | 2026-11-26 | in_progress | M1 干净 workdir 安装通过（退出 0、`--help` 0、849.8 MB）；AC-01–AC-11 全绿、全量 Checkfix 绿；待 owner 授权提交 | agent |
-| — | closed | owner 同意后显式列文件 commit/push，CHG 关闭 | — |
+| 2026-11-26 | closed | owner 授权后分三个 commit 提交并推送（54ec8b4 / bdd0ff8 / 86a99ba），AC-01–AC-11 全绿 | owner + agent |
 
 ## 实现记录（2026-11-26）
 
