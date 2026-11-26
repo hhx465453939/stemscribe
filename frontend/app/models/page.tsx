@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrefs } from "../components/Providers";
 import {
   getInstallStatus,
+  getSettings,
   listCatalog,
+  saveSettings,
   shell,
   startInstall,
   type CatalogItemView,
@@ -27,6 +29,16 @@ const tierKey: Record<string, Key> = {
   max: "models.tier.max",
 };
 
+// Architecture names are proper nouns (MDX-Net, Demucs); only the fallback is a
+// dictionary key, so a new architecture renders as itself instead of a raw key.
+const archLabel: Record<string, string> = {
+  mdx: "MDX-Net",
+  vr: "VR",
+  demucs: "Demucs",
+  mdxc: "MDX23C",
+  roformer: "Roformer",
+};
+
 export default function ModelsPage() {
   const { t } = usePrefs();
   const [catalog, setCatalog] = useState<CatalogView>({ installed: [], available: [] });
@@ -37,11 +49,15 @@ export default function ModelsPage() {
   // failure has to be attributed to a row explicitly; otherwise a refusal lands in a
   // banner above the tables and the user sees "nothing happened".
   const [tried, setTried] = useState("");
+  // The separation model the run path will actually use. Without showing it the
+  // page can install Demucs and still leave the next run on Kim Vocal 2.
+  const [currentSep, setCurrentSep] = useState("");
   const timer = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
-    const next = await listCatalog();
+    const [next, settings] = await Promise.all([listCatalog(), getSettings()]);
     setCatalog(next);
+    setCurrentSep(settings?.separator ?? "");
     setLoaded(true);
   }, []);
 
@@ -85,6 +101,19 @@ export default function ModelsPage() {
     if (st) setJob(st);
   }, []);
 
+  // Persist the choice and reflect it immediately: the run path reads the setting,
+  // so a failure here has to surface on the row instead of looking like success.
+  const selectSeparator = useCallback(async (id: string) => {
+    setError("");
+    setTried(id);
+    const res = await saveSettings({ separator: id });
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    setCurrentSep(id);
+  }, []);
+
   const openDir = useCallback(async (dir: string) => {
     const bridge = shell();
     if (bridge?.OpenFolder) {
@@ -126,11 +155,28 @@ export default function ModelsPage() {
           return (
             <tr key={m.id}>
               <td>{m.name || m.id}</td>
-              <td className="mono">{label(m)}</td>
+              <td>
+                <span className="mono">{label(m)}</span>
+                {m.architecture ? (
+                  <span className="mono muted"> · {archLabel[m.architecture] ?? m.architecture}</span>
+                ) : null}
+                {m.stems && m.stems.length > 0 ? (
+                  <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
+                    {t("models.stems").replace("{n}", String(m.stems.length))}
+                  </span>
+                ) : null}
+              </td>
               <td className="mono muted">{m.version || "—"}</td>
               <td className="num">{m.size_mb > 0 ? `${m.size_mb} MB` : "—"}</td>
               <td className="num">{m.vram_mb > 0 ? `${m.vram_mb} MB` : "—"}</td>
-              <td className="mono">{m.license || "—"}</td>
+              <td className="mono">
+                {m.license || "—"}
+                {m.non_commercial ? (
+                  <span className="tag tag--nc" title={t("models.nonCommercialHint")} style={{ marginLeft: "var(--sp-2)" }}>
+                    {t("models.nonCommercial")}
+                  </span>
+                ) : null}
+              </td>
               <td>
                 {m.path ? (
                   <span
@@ -159,6 +205,32 @@ export default function ModelsPage() {
                       <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
                         {m.backend === "cuda12" ? "CUDA" : "CPU"}
                       </span>
+                    ) : null}
+                    {m.torch_backend ? (
+                      <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
+                        {m.torch_backend === "cuda"
+                          ? t("models.torchCuda")
+                          : m.torch_backend === "cpu"
+                            ? t("models.torchCpu")
+                            : t("models.torchAbsent")}
+                      </span>
+                    ) : null}
+                    {m.kind === "separator" ? (
+                      currentSep === m.id ? (
+                        <span className="tag tag--manual" style={{ marginLeft: "var(--sp-2)" }}>
+                          {t("models.currentSeparator")}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ marginLeft: "var(--sp-3)" }}
+                          disabled={busy || running}
+                          onClick={() => void selectSeparator(m.id)}
+                        >
+                          {t("models.useAsSeparator")}
+                        </button>
+                      )
                     ) : null}
                     {m.upgrade ? (
                       <button

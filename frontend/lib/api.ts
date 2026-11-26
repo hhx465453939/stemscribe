@@ -121,6 +121,14 @@ export interface CatalogItemView {
   backend?: string;
   /** Installed, but on a device this machine should not be using (CPU on a CUDA box). */
   upgrade?: boolean;
+  /** Separator architecture (mdx/vr/demucs/mdxc/roformer); empty for other kinds. */
+  architecture?: string;
+  /** Stems a separator model produces, in canonical order. */
+  stems?: string[];
+  /** Weights whose licence forbids commercial use; the row marks them. */
+  non_commercial?: boolean;
+  /** Separation runtime only: "cuda", "cpu" or "absent". */
+  torch_backend?: string;
 }
 
 export interface CatalogView {

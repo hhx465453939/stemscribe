@@ -515,6 +515,13 @@ th.num {
   border-color: var(--lamp);
 }
 
+/* A non-commercial licence is a refusal the user must see before installing,
+   not a footnote: it is the one licence term that changes what they may do. */
+.tag--nc {
+  color: var(--fail);
+  border-color: var(--fail);
+}
+
 .muted {
   color: var(--text-3);
 }
