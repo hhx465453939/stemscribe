@@ -55,8 +55,10 @@ var stageOutputs = map[Stage][]string{
 	// prepareAudio writes both files before the pipeline runs (one ffmpeg pass):
 	// the separator's 44.1 kHz stereo input and whisper's 16 kHz mono copy.
 	StageDemux: {"audio/16k.wav", "audio/full.wav"},
-	// Separation produces both stems plus the 16 kHz mono vocals that whisper reads.
-	StageSeparate:   {"audio/vocals.wav", "audio/instrumental.wav", "audio/vocals16k.wav"},
+	// Separation always produces vocals plus the 16 kHz mono copy whisper reads;
+	// the remaining stems depend on the model (2/4/6) and are passed per run to
+	// MarkDoneWith instead of being hardcoded here.
+	StageSeparate:   {"audio/vocals.wav", "audio/vocals16k.wav"},
 	StageTranscribe: {"text/transcript.json"},
 	StageAlign:      {"text/transcript.json"},
 	StagePolish:     {"text/polished.md"},
@@ -221,8 +223,8 @@ type Meta struct {
 
 // Source describes where the episode came from.
 type Source struct {
-	Kind  string `json:"kind"`
-	URL   string `json:"url,omitempty"`
+	Kind   string `json:"kind"`
+	URL    string `json:"url,omitempty"`
 	Origin string `json:"origin,omitempty"`
 }
 
@@ -237,7 +239,7 @@ type StageRun struct {
 // Provenance is the reproducibility record (G-5).
 type Provenance struct {
 	Engines            map[string]EngineInfo `json:"engines"`
-	ParamsSnapshotHash string               `json:"params_snapshot_hash"`
+	ParamsSnapshotHash string                `json:"params_snapshot_hash"`
 	// ParamsSnapshot holds only the values that differ from the engine defaults.
 	// Recording thirty defaults per bundle would bury the one answer this field
 	// exists to give: what made this run different.
@@ -252,6 +254,10 @@ type EngineInfo struct {
 	ModelID      string `json:"model_id,omitempty"`
 	ModelSHA12   string `json:"model_sha12,omitempty"`
 	Quantization string `json:"quantization,omitempty"`
+	// Runtime and Stems describe a separation run: "onnx" or "torch", and the
+	// stem files that were actually produced. Backend still means the device.
+	Runtime string   `json:"runtime,omitempty"`
+	Stems   []string `json:"stems,omitempty"`
 }
 
 // ReadMeta loads meta.json. A missing file is reported as os.ErrNotExist so the
@@ -332,7 +338,13 @@ func (b *Bundle) WriteCheckpoint(cp Checkpoint) error {
 // success but writes nothing must still leave a resumable checkpoint. Checkpoint
 // .Plan will catch the gap on the next run because Observed() will not list it.
 func (b *Bundle) MarkDone(cp *Checkpoint, stage Stage, paramsHash string) (missing []string, err error) {
-	for _, rel := range stageOutputs[stage] {
+	return b.MarkDoneWith(cp, stage, paramsHash, stageOutputs[stage])
+}
+
+// MarkDoneWith fingerprints an explicit output list. Separation uses it because
+// the file set belongs to the model, not to the stage.
+func (b *Bundle) MarkDoneWith(cp *Checkpoint, stage Stage, paramsHash string, outputs []string) (missing []string, err error) {
+	for _, rel := range outputs {
 		full := filepath.Join(b.dir, filepath.FromSlash(rel))
 		info, statErr := os.Stat(full)
 		if statErr != nil {
@@ -356,15 +368,29 @@ func (b *Bundle) MarkDone(cp *Checkpoint, stage Stage, paramsHash string) (missi
 func (b *Bundle) Observe() map[string]Fingerprint {
 	out := map[string]Fingerprint{}
 	for _, rels := range stageOutputs {
-		for _, rel := range rels {
-			info, err := os.Stat(filepath.Join(b.dir, filepath.FromSlash(rel)))
-			if err != nil {
-				continue
+		b.observeInto(out, rels)
+	}
+	// Separation outputs are model dependent, so besides the two fixed files the
+	// whole audio directory is fingerprinted. Otherwise drums/bass/other of a
+	// 4-stem run could be edited between runs without Plan noticing.
+	if entries, err := os.ReadDir(filepath.Join(b.dir, "audio")); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				b.observeInto(out, []string{"audio/" + e.Name()})
 			}
-			out[rel] = Fingerprint{Size: info.Size(), ModTime: info.ModTime().UnixNano()}
 		}
 	}
 	return out
+}
+
+func (b *Bundle) observeInto(out map[string]Fingerprint, rels []string) {
+	for _, rel := range rels {
+		info, err := os.Stat(filepath.Join(b.dir, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		out[rel] = Fingerprint{Size: info.Size(), ModTime: info.ModTime().UnixNano()}
+	}
 }
 
 // HashParams is a tiny deterministic idempotency key for a parameter set. It is

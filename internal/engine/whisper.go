@@ -223,8 +223,8 @@ func (w *Whisper) Transcribe(ctx context.Context, audioPath, outPath string, opt
 // Separate is intentionally unimplemented; separation moved to CHG-0003
 // (ADR-014). Returning a typed error keeps the pipeline honest instead of
 // pretending a stage ran.
-func (w *Whisper) Separate(_ context.Context, _, _, _ string, _ pipeline.SeparateOptions) error {
-	return fmt.Errorf("separation: %w (moved to CHG-0003)", ErrNotImplemented)
+func (w *Whisper) Separate(_ context.Context, _, _ string, _ pipeline.SeparateOptions) (map[string]string, error) {
+	return nil, fmt.Errorf("separation: %w (moved to CHG-0003)", ErrNotImplemented)
 }
 
 func exitCodeOf(err error) int {

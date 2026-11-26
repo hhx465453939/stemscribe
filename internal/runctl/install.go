@@ -52,13 +52,23 @@ type Progress struct {
 }
 
 type verifiedFile struct {
-	ID          string    `json:"id"`
-	Kind        string    `json:"kind"`
-	Version     string    `json:"version,omitempty"`
-	Backend     string    `json:"backend,omitempty"`
-	SHA256      string    `json:"sha256,omitempty"`
-	SourceURL   string    `json:"source_url"`
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Version   string    `json:"version,omitempty"`
+	Backend   string    `json:"backend,omitempty"`
+	SHA256    string    `json:"sha256,omitempty"`
+	SourceURL string    `json:"source_url"`
 	InstalledAt time.Time `json:"installed_at"`
+	// Files lists every artifact of a multi-file model. SHA256 above stays the
+	// first file for backwards compatibility; a Demucs model needs all five
+	// entries to be auditable, not just its YAML.
+	Files []verifiedArtifact `json:"files,omitempty"`
+}
+
+type verifiedArtifact struct {
+	Dest   string `json:"dest"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
 }
 
 // RequireChecksum refuses unverified bytes (ADR-025). A null+tbd entry means nobody
@@ -99,8 +109,11 @@ func Install(ctx context.Context, workdir, id string, onProgress func(Progress))
 	}
 	if id == engine.SeparatorRuntimeID {
 		// Not a registry archive: a Python environment is built from PyPI rather than
-		// unpacked from a zip, so it cannot be described by the archive schema.
-		return InstallSeparatorRuntime(ctx, layout, onProgress)
+		// unpacked from a zip, so it cannot be described by the archive schema. The
+		// CUDA torch profile is included exactly when an installed model needs it.
+		return InstallSeparatorRuntime(ctx, layout, SeparatorInstallOptions{
+			Torch: separatorTorchRequired(layout),
+		}, onProgress)
 	}
 	reg, err := registry.Builtin()
 	if err != nil {
@@ -179,11 +192,27 @@ func installModel(ctx context.Context, layout config.Layout, reg registry.Regist
 		}
 	}
 	src := reg.ResolveURL(mirror, m.Files[0].URL)
-	if err := writeVerified(layout, verifiedFile{
+	verified := verifiedFile{
 		ID: m.ID, Kind: "model", SHA256: *m.Files[0].SHA256,
 		SourceURL: src, InstalledAt: time.Now().UTC(),
-	}, destDir); err != nil {
+	}
+	if len(m.Files) > 1 {
+		for _, f := range m.Files {
+			verified.Files = append(verified.Files, verifiedArtifact{
+				Dest: f.Dest, SHA256: *f.SHA256, Size: f.Size,
+			})
+		}
+	}
+	if err := writeVerified(layout, verified, destDir); err != nil {
 		return Installed{}, fmt.Errorf("record: %w", err)
+	}
+	// PyTorch-architecture models need the CUDA torch build. Doing this here means
+	// the user who just installed Demucs does not discover the missing profile on
+	// the first run, and it is still their action that authorised the download.
+	if m.Architecture.UsesTorch() {
+		if err := ensureTorchRuntime(ctx, layout, onProgress); err != nil {
+			return Installed{}, fmt.Errorf("install %s runtime support: %w", m.ID, err)
+		}
 	}
 	return Installed{ID: m.ID, Kind: "model", SHA256: *m.Files[0].SHA256, SourceURL: src, DestDir: destDir}, nil
 }

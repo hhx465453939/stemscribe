@@ -211,6 +211,7 @@ func buildSeparator(workdir string, reg registry.Registry, sepModelID string) (*
 		MetaDir:   metaDir,
 		ModelDir:  filepath.Dir(modelPath),
 		ModelFile: filepath.Base(modelPath),
+		Arch:      string(m.Architecture),
 		FFmpegExe: ffmpeg,
 		Version:   engine.SeparatorVersion(workdir),
 		Accel:     accel,

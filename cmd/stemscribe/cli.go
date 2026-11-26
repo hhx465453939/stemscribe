@@ -28,6 +28,15 @@ func cmdRun(args []string) int {
 	durationMS := fs.Int("duration-ms", 30000, "synthetic duration used by the smoke engine")
 	engineName := fs.String("engine", "auto", "engine: auto (real whisper.cpp) | synthetic (test double)")
 	modelFlag := fs.String("model", "", "model id from the registry (default: from settings)")
+	sepFlag := fs.String("separator", "", "separation model id from the registry (default: from settings)")
+	// Separation knobs, in the units of the selected model's architecture:
+	// MDX counts segment_size in STFT frames, Demucs in seconds. Zero means the
+	// architecture default, so "not passed" is never confused with "set to 0".
+	segSize := fs.Int("segment", 0, "separation segment_size (MDX: STFT frames, Demucs: seconds; 0 = default)")
+	overlap := fs.Float64("overlap", 0, "separation window overlap fraction, e.g. 0.25 (0 = default)")
+	shifts := fs.Int("shifts", 0, "Demucs random shifts (0 = default)")
+	batch := fs.Int("batch", 0, "separation batch size (MDX/VR/MDXC; 0 = default)")
+	fp16 := fs.Bool("fp16", false, "ask the torch stack for fp16 autocast (CUDA only, opt-in)")
 
 	// The knobs that matter on the first real use, reachable without the UI (F-10).
 	lang := fs.String("language", "", "spoken language, e.g. zh or auto (default: engine default en)")
@@ -120,10 +129,15 @@ func cmdRun(args []string) int {
 
 	runctl.Version = version
 	out, err := runctl.Run(runCtx, runctl.Options{
-		Input:      absInput,
-		Title:      *title,
-		Workdir:    *workdir,
-		ModelID:    *modelFlag,
+		Input:       absInput,
+		Title:       *title,
+		Workdir:     *workdir,
+		ModelID:     *modelFlag,
+		SeparatorID: *sepFlag,
+		SepTuning: runctl.SeparateTuning{
+			Segment: *segSize, Overlap: *overlap, Shifts: *shifts,
+			BatchSize: *batch, FP16: *fp16,
+		},
 		Engine:     *engineName,
 		DurationMS: *durationMS,
 		Params:     params,

@@ -56,14 +56,27 @@ func (s *SyntheticEngine) Transcribe(_ context.Context, _, outPath string, opts 
 }
 
 // Separate writes placeholder stems so downstream stage checks have files to see.
-func (s *SyntheticEngine) Separate(_ context.Context, _, vocalsPath, instrumentalPath string, _ pipeline.SeparateOptions) error {
+func (s *SyntheticEngine) Separate(_ context.Context, _, outDir string, opts pipeline.SeparateOptions) (map[string]string, error) {
 	payload := []byte("RIFF....WAVEfmt synthetic placeholder")
-	for _, p := range []string{vocalsPath, instrumentalPath} {
-		if err := writeFile(p, payload); err != nil {
-			return err
-		}
+	want := opts.Stems
+	if len(want) == 0 {
+		want = []string{"vocals", "instrumental"}
 	}
-	return nil
+	stems := map[string]string{}
+	for _, stem := range want {
+		p := filepath.Join(outDir, stem+".wav")
+		if err := writeFile(p, payload); err != nil {
+			return nil, err
+		}
+		stems[stem] = p
+	}
+	// The real adapter always derives this file; the pipeline requires it for the
+	// transcription stage, so the double must produce it too.
+	vocals16k := filepath.Join(outDir, "vocals16k.wav")
+	if err := writeFile(vocals16k, payload); err != nil {
+		return nil, err
+	}
+	return stems, nil
 }
 
 func writeFile(path string, data []byte) error {

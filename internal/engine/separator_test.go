@@ -132,3 +132,49 @@ func TestRegistryAcceptsCPUSeparatorWithoutVRAM(t *testing.T) {
 		t.Fatal("separation model has no measured sha256")
 	}
 }
+
+// A multi-file model is installed only when every declared file is present, and
+// the file handed to audio-separator is the YAML for Demucs. Checking just the
+// first manifest entry used to report a half-copied Demucs directory as ready.
+func TestFindModelRequiresWholeManifest(t *testing.T) {
+	reg, err := registry.Builtin()
+	if err != nil {
+		t.Fatalf("builtin registry: %v", err)
+	}
+	wd := t.TempDir()
+	m, ok := reg.FindModel("demucs-htdemucs")
+	if !ok || len(m.Files) < 2 {
+		t.Fatal("expected a multi-file Demucs entry in the catalog")
+	}
+	dir := filepath.Join(wd, "models", m.Family, m.ID)
+	if err = os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Neither file present.
+	if _, ok = FindModel(wd, reg, m.ID); ok {
+		t.Fatal("empty directory must not read as installed")
+	}
+
+	// Only the weights: the model is still not usable.
+	weight := filepath.Join(dir, filepath.FromSlash(m.Files[1].Dest))
+	if err = os.WriteFile(weight, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok = FindModel(wd, reg, m.ID); ok {
+		t.Fatal("missing YAML must not read as installed")
+	}
+
+	// Both files: installed, and the YAML is what the engine loads.
+	yamlPath := filepath.Join(dir, filepath.FromSlash(m.Files[0].Dest))
+	if err = os.WriteFile(yamlPath, []byte("models: ['x']"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := FindModel(wd, reg, m.ID)
+	if !ok {
+		t.Fatal("complete Demucs manifest should read as installed")
+	}
+	if !strings.HasSuffix(got, ".yaml") {
+		t.Fatalf("Demucs entry file = %q, want the YAML", filepath.Base(got))
+	}
+}

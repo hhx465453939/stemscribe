@@ -1,9 +1,13 @@
 package runctl
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/hhx465453939/stemscribe/internal/config"
 )
 
 // Exactly one ONNX Runtime flavour must be listed per variant. Installing both
@@ -85,5 +89,96 @@ func TestSeparatorNeedsUpgrade(t *testing.T) {
 		if got := separatorNeedsUpgrade(c.installed, c.accel, c.desired); got != c.want {
 			t.Errorf("separatorNeedsUpgrade(%v,%q,%q) = %v, want %v", c.installed, c.accel, c.desired, got, c.want)
 		}
+	}
+}
+
+// The CUDA torch build must never be silently swapped for the CPU wheel: the
+// whole point of the profile is that a Demucs run either gets the GPU or fails
+// loudly.
+func TestTorchIndexesHonourOverride(t *testing.T) {
+	t.Setenv("STEMSCRIBE_TORCH_INDEX", "https://example.org/wheels")
+	got := torchIndexes()
+	if len(got) != 1 || got[0] != "https://example.org/wheels" {
+		t.Fatalf("torchIndexes = %v, want the explicit override only", got)
+	}
+	t.Setenv("STEMSCRIBE_TORCH_INDEX", "")
+	if len(torchIndexes()) < 2 {
+		t.Fatal("without an override there must be a fallback chain, not a single index")
+	}
+	if !strings.Contains(torchPackage, "+cu") || !strings.Contains(torchvisionPackage, "+cu") {
+		t.Fatalf("torch pins must be CUDA wheels, got %q / %q", torchPackage, torchvisionPackage)
+	}
+}
+
+func TestDescribeTorchFailure(t *testing.T) {
+	cases := []struct {
+		probe separatorProbeResult
+		want  string
+	}{
+		{separatorProbeResult{Torch: "cpu"}, "CPU-only"},
+		{separatorProbeResult{Torch: "absent"}, "not installed"},
+		{separatorProbeResult{Torch: "cpu", TorchErr: "DLL load failed"}, "DLL load failed"},
+	}
+	for _, c := range cases {
+		if got := c.probe.describeTorchFailure(); !strings.Contains(got, c.want) {
+			t.Errorf("describeTorchFailure(%+v) = %q, want it to mention %q", c.probe, got, c.want)
+		}
+	}
+}
+
+// A torch model on disk is what turns the 2.6 GB profile from optional into
+// required; an uninstalled catalog entry must not.
+func TestSeparatorTorchRequired(t *testing.T) {
+	layout, err := config.NewLayout(t.TempDir())
+	if err != nil {
+		t.Fatalf("layout: %v", err)
+	}
+	if separatorTorchRequired(layout) {
+		t.Fatal("nothing installed: torch profile must stay optional")
+	}
+	dir := filepath.Join(layout.Models(), "separator", "demucs-htdemucs-6s")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"htdemucs_6s.yaml", "5c90dfd2-34c22ccb.th"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !separatorTorchRequired(layout) {
+		t.Fatal("an installed VR model needs the torch profile")
+	}
+}
+
+// The probe output is the only evidence install records about the GPU. Parsing it
+// wrongly would either claim CUDA without a session or hide a CPU-only torch.
+func TestParseSeparatorProbe(t *testing.T) {
+	out := `AVAILABLE:CUDAExecutionProvider,CPUExecutionProvider
+SESSION:CUDAExecutionProvider,CPUExecutionProvider
+TORCHVERSION:2.14.1+cu126
+TORCH:CUDA`
+	res := parseSeparatorProbe(out, nil)
+	if !containsString(res.Session, "CUDAExecutionProvider") {
+		t.Fatalf("session providers = %v", res.Session)
+	}
+	if res.Torch != "cuda" || res.TorchVersion != "2.14.1+cu126" {
+		t.Fatalf("torch probe = %q version %q", res.Torch, res.TorchVersion)
+	}
+
+	// A CPU environment: the CUDA session raises, torch reports CPU, and both
+	// reasons must survive parsing so the record can explain the downgrade.
+	cpuOut := `AVAILABLE:CPUExecutionProvider
+SESSIONERROR:CUDAExecutionProvider is not in available provider names
+TORCHVERSION:2.15.0+cpu
+TORCH:CPU`
+	cpu := parseSeparatorProbe(cpuOut, nil)
+	if len(cpu.Session) != 0 || cpu.SessionErr == "" {
+		t.Fatalf("cpu probe session = %v err %q", cpu.Session, cpu.SessionErr)
+	}
+	if cpu.Torch != "cpu" {
+		t.Fatalf("torch = %q", cpu.Torch)
+	}
+	if !strings.Contains(cpu.describeFailure(), "CUDAExecutionProvider is not in available provider names") {
+		t.Fatalf("failure detail lost: %q", cpu.describeFailure())
 	}
 }

@@ -28,12 +28,24 @@ func (f *fakeEngine) Transcribe(_ context.Context, _, outPath string, _ Transcri
 	return WriteTranscript(outPath, f.segments)
 }
 
-func (f *fakeEngine) Separate(_ context.Context, _, vocalsPath, instrPath string, _ SeparateOptions) error {
+func (f *fakeEngine) Separate(_ context.Context, _, outDir string, opts SeparateOptions) (map[string]string, error) {
 	f.sepCalls++
-	if err := os.WriteFile(vocalsPath, []byte("RIFF...."), 0o644); err != nil {
-		return err
+	want := opts.Stems
+	if len(want) == 0 {
+		want = []string{"vocals", "instrumental"}
 	}
-	return os.WriteFile(instrPath, []byte("RIFF...."), 0o644)
+	stems := map[string]string{}
+	for _, stem := range want {
+		p := filepath.Join(outDir, stem+".wav")
+		if err := os.WriteFile(p, []byte("RIFF...."), 0o644); err != nil {
+			return nil, err
+		}
+		stems[stem] = p
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "vocals16k.wav"), []byte("RIFF...."), 0o644); err != nil {
+		return nil, err
+	}
+	return stems, nil
 }
 
 func newBundle(t *testing.T) *store.Bundle {

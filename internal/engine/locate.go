@@ -129,18 +129,47 @@ func FindRuntime(workdir string, backend registry.Backend) (Installed, bool) {
 	return Installed{}, false
 }
 
-// FindModel locates an installed model by registry id.
+// FindModel locates an installed model by registry id and returns the file the
+// engine is asked to load.
+//
+// Every declared file must be present, not just the first one: a Demucs model is
+// a YAML plus one or more .th weights, and a half-copied directory used to read
+// as "installed" and then fail deep inside the Python stack with a download
+// error. Checking the whole manifest makes the failure land at the prerequisite
+// check, where the message can say what to install.
 func FindModel(workdir string, reg registry.Registry, modelID string) (string, bool) {
 	m, ok := reg.FindModel(modelID)
 	if !ok || len(m.Files) == 0 {
 		return "", false
 	}
-	dest := filepath.FromSlash(m.Files[0].Dest)
-	path := filepath.Join(workdir, "models", m.Family, modelID, dest)
-	if _, err := os.Stat(path); err != nil {
-		return "", false
+	dir := filepath.Join(workdir, "models", m.Family, modelID)
+	for _, f := range m.Files {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.Dest))); err != nil {
+			return "", false
+		}
 	}
-	return path, true
+	return filepath.Join(dir, entryFile(m)), true
+}
+
+// entryFile is the manifest entry the inference stack loads. Demucs is selected
+// by its YAML, which names the weights it needs; every other architecture is
+// selected by the weights themselves. Deciding this from Architecture rather
+// than from manifest order means a registry edit cannot silently load the wrong
+// file.
+func entryFile(m registry.Model) string {
+	if m.Architecture == registry.ArchitectureDemucs {
+		for _, f := range m.Files {
+			if strings.HasSuffix(strings.ToLower(f.Dest), ".yaml") {
+				return filepath.FromSlash(f.Dest)
+			}
+		}
+	}
+	for _, f := range m.Files {
+		if !strings.HasSuffix(strings.ToLower(f.Dest), ".yaml") {
+			return filepath.FromSlash(f.Dest)
+		}
+	}
+	return filepath.FromSlash(m.Files[0].Dest)
 }
 
 // FindFFmpeg looks for ffmpeg next to our runtimes, then on PATH.

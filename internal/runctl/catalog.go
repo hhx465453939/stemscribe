@@ -30,6 +30,17 @@ type CatalogItem struct {
 	// this machine should have -- the Python runtime was CPU-only on a GPU box.
 	Backend string `json:"backend,omitempty"`
 	Upgrade bool   `json:"upgrade,omitempty"`
+	// Architecture and Stems are the model's own facts (registry schema), not a
+	// UI guess: the page must say "demucs · 4 stems" before install, and the
+	// runner needs the same values to validate its output.
+	Architecture string   `json:"architecture,omitempty"`
+	Stems        []string `json:"stems,omitempty"`
+	// NonCommercial is set for weights whose licence forbids commercial use. The
+	// page marks these; the installer still allows them for personal use.
+	NonCommercial bool `json:"non_commercial,omitempty"`
+	// TorchBackend applies to the separation runtime: "cuda", "cpu" or "absent".
+	// It is what tells a Demucs user whether the 4-stem run will use the GPU.
+	TorchBackend string `json:"torch_backend,omitempty"`
 }
 
 // Catalog is the split the model centre renders.
@@ -55,15 +66,18 @@ func CatalogNow(workdir string) (Catalog, error) {
 	for _, m := range reg.Models {
 		path, ok := engine.FindModel(workdir, reg, m.ID)
 		item := CatalogItem{
-			ID:        m.ID,
-			Name:      m.DisplayName,
-			Kind:      m.Family,
-			License:   m.License.SPDX,
-			Tier:      m.QualityTier,
-			SizeMB:    m.DiskAfterInstallMB,
-			VRAMMB:    m.VRAMEstimateMB,
-			Installed: ok,
-			Version:   m.Quantization,
+			ID:            m.ID,
+			Name:          m.DisplayName,
+			Kind:          m.Family,
+			License:       m.License.SPDX,
+			Tier:          m.QualityTier,
+			SizeMB:        m.DiskAfterInstallMB,
+			VRAMMB:        m.VRAMEstimateMB,
+			Installed:     ok,
+			Version:       m.Quantization,
+			Architecture:  string(m.Architecture),
+			Stems:         m.Stems,
+			NonCommercial: m.License.NonCommercial,
 		}
 		if ok {
 			item.Path = filepath.Dir(path)
@@ -86,15 +100,16 @@ func CatalogNow(workdir string) (Catalog, error) {
 			accel = "cpu"
 		}
 		sep := CatalogItem{
-			ID:        engine.SeparatorRuntimeID,
-			Name:      "UVR5 separator (Python venv)",
-			Kind:      "runtime",
-			License:   "MIT",
-			SizeMB:    separatorRuntimeSizeMB(accel),
-			Installed: sepOK,
-			Version:   engine.SeparatorVersion(workdir),
-			Path:      filepath.Join(workdir, "runtimes", "separator"),
-			Backend:   accel,
+			ID:           engine.SeparatorRuntimeID,
+			Name:         "UVR5 separator (Python venv)",
+			Kind:         "runtime",
+			License:      "MIT",
+			SizeMB:       separatorRuntimeSizeMB(accel, info.TorchBackend),
+			Installed:    sepOK,
+			Version:      engine.SeparatorVersion(workdir),
+			Path:         filepath.Join(workdir, "runtimes", "separator"),
+			Backend:      accel,
+			TorchBackend: info.TorchBackend,
 			// A CPU install on a machine that can do CUDA is exactly the state that
 			// made separation hammer the CPU while the GPU idled; offer the upgrade
 			// instead of a dead-end "verified".
@@ -153,10 +168,15 @@ func CatalogNow(workdir string) (Catalog, error) {
 // The CPU number was measured on a clean venv with audio-separator[cpu]; the CUDA
 // number adds onnxruntime-gpu and the nvidia-* wheels that carry cublas/cufft/
 // cudnn. Both are shown before install, so both are measured, not estimated.
-func separatorRuntimeSizeMB(accel string) int {
+func separatorRuntimeSizeMB(accel, torchBackend string) int {
+	if accel == "cuda12" && torchBackend == "cuda" {
+		// Measured 2026-11-26 after the in-place torch upgrade on the real workdir:
+		// audio-separator + CUDA torch 2.14.1(+cu126) + onnxruntime-gpu + nvidia cu12.
+		return 7243
+	}
 	if accel == "cuda12" {
-		// Measured 2026-11-26 on the real workdir after upgrading in place:
-		// audio-separator + torch-cpu + onnxruntime-gpu + the nvidia cu12 wheels.
+		// Measured 2026-11-26 on the real workdir: audio-separator + torch-cpu +
+		// onnxruntime-gpu + the nvidia cu12 wheels.
 		return 3728
 	}
 	return 1040

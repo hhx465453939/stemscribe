@@ -202,7 +202,7 @@ func TestWhisperWithFakeExec(t *testing.T) {
 
 func TestWhisperSeparateUnimplemented(t *testing.T) {
 	w := &Whisper{}
-	if err := w.Separate(context.Background(), "a", "b", "c", pipeline.SeparateOptions{}); err == nil {
+	if _, err := w.Separate(context.Background(), "a", "b", pipeline.SeparateOptions{}); err == nil {
 		t.Fatal("separation must fail loudly until CHG-0003 lands")
 	}
 }

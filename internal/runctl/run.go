@@ -30,14 +30,22 @@ var Version = "dev"
 // Options is one run request. Every field is explicit: a caller that forgets a
 // knob gets the engine default, never a silent zero value.
 type Options struct {
-	Input      string
-	Title      string
-	Workdir    string
-	ModelID    string
-	Engine     string // auto (real whisper.cpp) | synthetic (test double)
-	DurationMS int
-	Params     engine.WhisperParams
-	Separate   bool
+	Input   string
+	Title   string
+	Workdir string
+	ModelID string
+	// SeparatorID overrides the configured separation model for this run only.
+	// Every model family (MDX, VR, Demucs 4/6-stem) is selected the same way, so
+	// the CLI can exercise a model before the model centre exists for it.
+	SeparatorID string
+	Engine      string // auto (real whisper.cpp) | synthetic (test double)
+	DurationMS  int
+	Params      engine.WhisperParams
+	Separate    bool
+	// SepTuning overrides the separation knobs for this run. The zero value keeps
+	// each architecture's upstream default, which is what a caller with no
+	// opinion should get.
+	SepTuning SeparateTuning
 	// OutputDir overrides Settings.OutputDir for this run only. Empty means "use the
 	// configured default", which itself falls back to workdir/libraries.
 	OutputDir string
@@ -52,6 +60,42 @@ type Options struct {
 	// downgradeNote explains, inside the retried run's own log, why the model is
 	// not the requested one.
 	downgradeNote string
+}
+
+// SeparateTuning is the per-run separation parameter set.
+//
+// Units follow the architecture, not this struct: Segment is STFT frames for
+// MDX/MDXC and seconds for Demucs. A value that the selected architecture does
+// not honour is rejected here rather than silently ignored deeper in Python.
+type SeparateTuning struct {
+	Segment   int
+	Overlap   float64
+	Shifts    int
+	BatchSize int
+	// FP16 asks for torch autocast (CUDA only). Off by default: the quality has
+	// to be measured per model before it can become a default.
+	FP16 bool
+}
+
+// Validate rejects combinations the selected model cannot honour, so the user
+// hears about it before a GPU run starts instead of in a Python traceback.
+func (t SeparateTuning) Validate(m registry.Model) error {
+	if t.Segment < 0 || t.Overlap < 0 || t.Overlap >= 1 || t.Shifts < 0 || t.BatchSize < 0 {
+		return fmt.Errorf("separation parameters out of range (segment/shifts/batch must be >= 0, overlap in [0,1))")
+	}
+	if t.Segment > 0 && !m.Params.SegmentSize {
+		return fmt.Errorf("%s (%s) has no segment_size setting", m.ID, m.Architecture)
+	}
+	if t.Overlap > 0 && !m.Params.Overlap {
+		return fmt.Errorf("%s (%s) has no overlap setting", m.ID, m.Architecture)
+	}
+	if t.Shifts > 0 && !m.Params.Shifts {
+		return fmt.Errorf("%s (%s) has no shifts setting", m.ID, m.Architecture)
+	}
+	if t.BatchSize > 0 && !m.Params.BatchSize {
+		return fmt.Errorf("%s (%s) has no batch_size setting", m.ID, m.Architecture)
+	}
+	return nil
 }
 
 // Outcome reports what a finished run produced.
@@ -225,7 +269,10 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	}
 	sepModelID := ""
 	if separate {
-		sepModelID = settings.Stages.Separator
+		sepModelID = o.SeparatorID
+		if sepModelID == "" {
+			sepModelID = settings.Stages.Separator
+		}
 		if sepModelID == "" {
 			sepModelID = config.Defaults(layout.Root).Stages.Separator
 		}
@@ -238,6 +285,21 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		if id, note := resolveModel(layout.Root, reg, modelID); id != modelID {
 			emitLogged(pipeline.Event{Kind: "stage.warn", Code: "MODEL_SUBSTITUTED", Note: note})
 			modelID = id
+		}
+	}
+	sepArch := ""
+	if separate {
+		reg, regErr := registry.Builtin()
+		if regErr != nil {
+			return out, fmt.Errorf("load registry: %w", regErr)
+		}
+		m, ok := reg.FindModel(sepModelID)
+		if !ok {
+			return out, fmt.Errorf("unknown separation model %q", sepModelID)
+		}
+		sepArch = string(m.Architecture)
+		if err := o.SepTuning.Validate(m); err != nil {
+			return out, err
 		}
 	}
 	engName, engVersion := "synthetic", Version
@@ -281,7 +343,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	// model option look like it did nothing.
 	stageParams := map[string]string{
 		"transcribe": transcribeHash + ";model=" + modelID,
-		"separate":   "model=" + sepModelID,
+		"separate":   separationHash(sepModelID, o.SepTuning),
 	}
 
 	// Plan only after every `disabled` decision is final, or the plan resumes at a
@@ -299,13 +361,19 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 
 	runner := &pipeline.Runner{Engine: eng, Emit: emitLogged}
 	result, err := runner.Run(ctx, pipeline.Request{
-		Bundle:       bundle,
-		Plan:         plan,
-		Params:       stageParams,
-		VideoID:      videoID,
-		Separate:     separate,
-		Transcribe:   pipeline.TranscribeOptions{Model: modelID, VAD: params.VAD},
-		SeparateOpts: pipeline.SeparateOptions{Model: sepModelID, SegmentSecs: 15, OverlapSecs: 2, HalfPrecision: true},
+		Bundle:     bundle,
+		Plan:       plan,
+		Params:     stageParams,
+		VideoID:    videoID,
+		Separate:   separate,
+		Transcribe: pipeline.TranscribeOptions{Model: modelID, VAD: params.VAD},
+		SeparateOpts: pipeline.SeparateOptions{
+			Model: sepModelID, Arch: sepArch,
+			Segment: o.SepTuning.Segment, Overlap: o.SepTuning.Overlap,
+			Shifts: o.SepTuning.Shifts, BatchSize: o.SepTuning.BatchSize,
+			HalfPrecision: o.SepTuning.FP16,
+			Stems:         separatorStems(sepModelID),
+		},
 	})
 	if err != nil {
 		// A stop is a user decision, not a defect: record it as canceled so the
@@ -316,6 +384,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 			status, stageState = "canceled", "canceled"
 		}
 		meta := BuildMeta(videoID, o.Title, absInput, status, engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
+		recordSeparateRuntime(&meta, eng)
 		meta.Stages[string(result.FailedAt)] = store.StageRun{State: stageState, Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		return out, fmt.Errorf("failed at %s: %w", result.FailedAt, err)
@@ -330,6 +399,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	}
 
 	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
+	recordSeparateRuntime(&meta, eng)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}
@@ -482,3 +552,47 @@ func InputNeedsDemux(path string) bool {
 }
 
 var _ = registry.BackendCPU
+
+// separatorStems is the configured model's declared output set. An id the
+// catalog does not know yields nil, and the pipeline then requires only vocals.
+func separatorStems(modelID string) []string {
+	reg, err := registry.Builtin()
+	if err != nil {
+		return nil
+	}
+	if m, ok := reg.FindModel(modelID); ok {
+		return m.Stems
+	}
+	return nil
+}
+
+// separationHash is the checkpoint key for the separate stage. It has to cover
+// every knob that changes the output: changing shifts or overlap while the model
+// id stays the same, then resuming, used to keep the stems produced with the old
+// values.
+func separationHash(modelID string, t SeparateTuning) string {
+	return store.HashParams(
+		"model="+modelID,
+		fmt.Sprintf("segment=%d", t.Segment),
+		fmt.Sprintf("overlap=%g", t.Overlap),
+		fmt.Sprintf("shifts=%d", t.Shifts),
+		fmt.Sprintf("batch=%d", t.BatchSize),
+		fmt.Sprintf("fp16=%v", t.FP16),
+	)
+}
+
+// recordSeparateRuntime adds the facts only the engine knows after a run: the
+// inference stack and the stem files that really exist on disk.
+func recordSeparateRuntime(meta *store.Meta, eng pipeline.Engine) {
+	c, ok := eng.(*engine.Composite)
+	if !ok || c.Separator == nil {
+		return
+	}
+	info, ok := meta.Provenance.Engines["separate"]
+	if !ok {
+		return
+	}
+	info.Runtime = c.Separator.LastRuntime
+	info.Stems = separatorStems(info.ModelID)
+	meta.Provenance.Engines["separate"] = info
+}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/hhx465453939/stemscribe/internal/store"
@@ -35,17 +36,45 @@ type TranscribeOptions struct {
 }
 
 // SeparateOptions are the knobs passed to the separator.
+// SeparateOptions describes one separation request.
+//
+// The knobs below are architecture specific and their units differ on purpose:
+// MDX-Net counts segment_size in STFT frames (256 is the upstream default) while
+// Demucs counts it in seconds ("Default" means the model's native 7.8 s). The
+// adapter maps each field onto the right architecture dictionary, and a field
+// that the architecture does not honour is never sent -- audio-separator would
+// silently ignore it and the user would think the setting did something.
 type SeparateOptions struct {
-	Model        string
-	SegmentSecs  int
-	OverlapSecs  int
+	Model string
+	// Segment is segment_size in the units of the model's architecture (see
+	// above). Zero means "leave the upstream default".
+	Segment int
+	// Overlap is the window overlap as a fraction (0.25 upstream default).
+	// Zero means "leave the upstream default".
+	Overlap float64
+	// HalfPrecision asks the torch stack for fp16 autocast. It is opt-in: the
+	// quality has to be measured per model before it becomes a default.
 	HalfPrecision bool
+	// Shifts and BatchSize are architecture-specific knobs (Demucs shifts,
+	// MDX/VR/MDXC batch). Zero means "leave the model default".
+	Shifts    int
+	BatchSize int
+	// Arch is the registry architecture of Model (mdx/vr/demucs/mdxc/roformer).
+	// The adapter needs it to pick the parameter dictionary; inferring it from
+	// the filename is how a VR model ends up with MDX parameters.
+	Arch string
+	// Stems is the set the configured model must produce, from the registry. A
+	// missing stem is a failed separation, never a quietly shorter result.
+	Stems []string
 }
 
 // Engine is the out-of-process inference port.
 type Engine interface {
 	Transcribe(ctx context.Context, audioPath, outPath string, opts TranscribeOptions, onSeg func(Segment)) error
-	Separate(ctx context.Context, inPath, vocalsPath, instrumentalPath string, opts SeparateOptions) error
+	// Separate writes <stem>.wav files into outDir and returns their absolute
+	// paths. Which stems exist is the model's property, not the caller's, so the
+	// port returns the set instead of naming two fixed outputs.
+	Separate(ctx context.Context, inPath, outDir string, opts SeparateOptions) (map[string]string, error)
 }
 
 // Event kinds written to runs/<run_id>.jsonl.
@@ -70,10 +99,10 @@ type Runner struct {
 
 // Request describes what to run.
 type Request struct {
-	Bundle   *store.Bundle
-	Plan     store.Plan
-	Separate bool
-	Transcribe TranscribeOptions
+	Bundle       *store.Bundle
+	Plan         store.Plan
+	Separate     bool
+	Transcribe   TranscribeOptions
 	SeparateOpts SeparateOptions
 	// Params carries the real parameter hash per stage, computed by the caller
 	// (only it knows the engine settings). Without this the checkpoint recorded
@@ -152,13 +181,16 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 
 		emit(Event{Kind: "stage.start", Stage: string(stage)})
 		var stageErr error
+		var sepStems map[string]string
 
 		switch stage {
 		case store.StageSeparate:
-			vocals, _ := b.Path("audio/vocals.wav")
-			instr, _ := b.Path("audio/instrumental.wav")
+			audioDir, _ := b.Path("audio")
 			full, _ := b.Path("audio/full.wav")
-			stageErr = r.Engine.Separate(ctx, full, vocals, instr, req.SeparateOpts)
+			sepStems, stageErr = r.Engine.Separate(ctx, full, audioDir, req.SeparateOpts)
+			if stageErr == nil {
+				stageErr = requireStems(sepStems, req.SeparateOpts.Stems)
+			}
 		case store.StageTranscribe:
 			// Transcribe the 16 kHz copy of the separated vocals. Falling back to the
 			// source's 16k.wav happens only when separation did not run (the synthetic
@@ -189,7 +221,11 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 			return res, stageErr
 		}
 
-		missingOut, markErr := b.MarkDone(&cp, stage, stageParamHash(req.Params, stage))
+		outputs := store.Outputs(stage)
+		if stage == store.StageSeparate {
+			outputs = separateOutputs(sepStems)
+		}
+		missingOut, markErr := b.MarkDoneWith(&cp, stage, stageParamHash(req.Params, stage), outputs)
 		if markErr != nil {
 			return res, markErr
 		}
@@ -386,4 +422,39 @@ func normalise(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// requireStems checks that every stem the registry promised exists in the
+// result. A 4-stem model that returns three is a failed separation, not a
+// successful one with fewer files: the UI would otherwise offer a bundle whose
+// drums track silently never existed.
+func requireStems(got map[string]string, want []string) error {
+	if len(want) == 0 {
+		if _, ok := got["vocals"]; !ok {
+			return fmt.Errorf("separation produced no vocals track")
+		}
+		return nil
+	}
+	var missing []string
+	for _, stem := range want {
+		if got[stem] == "" {
+			missing = append(missing, stem)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("separation did not produce required stem(s): %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// separateOutputs lists the bundle-relative files a separation actually wrote.
+func separateOutputs(stems map[string]string) []string {
+	names := make([]string, 0, len(stems)+1)
+	for stem := range stems {
+		names = append(names, "audio/"+stem+".wav")
+	}
+	names = append(names, "audio/vocals16k.wav")
+	sort.Strings(names)
+	return names
 }
