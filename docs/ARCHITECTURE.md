@@ -100,7 +100,17 @@ func (a *App) TestProvider(providerID string) (ProbeResult, error)
 // 系统
 func (a *App) ProbeHardware() (HardwareReport, error)
 func (a *App) SetWorkdir(path string) error
+
+// 文件系统（CHG-0016：桌面窗口独有，浏览器拿不到绝对路径）
+func (a *App) PickFiles() ([]string, error)                 // 多选媒体文件
+func (a *App) PickFolder(initial string) (string, error)    // 输出目录
+func (a *App) StatFiles(paths []string) []FileMeta          // 只读 size，不复制文件
+func (a *App) OpenFolder(path string) error                 // 资源管理器定位
 ```
+
+**停止任务**走 HTTP 控制面而不是新绑定：`POST /api/queue/{id}/stop`（队列项）与
+`POST /api/runs/{id}/cancel`（单次运行）。这样浏览器壳与原生窗口共用一条路径
+（ADR-022），也避免了「窗口能停、浏览器不能停」的分叉。
 
 **事件推送（Go → UI）**统一走 `runtime.EventsEmit("evt", payload)`，单一事件通道 + `type` 判别：
 
@@ -195,6 +205,8 @@ done/failed/canceled → (retry) → queued（从最近 checkpoint 续）
 
 - `polishing` 在未开润色时直接跳过（不入状态机，记 `skipped`）。
 - `aligning` 负责把分离/转写分段边界对齐、合并被切断的句子（见 `PIPELINE.md` §4）。
+- `canceled` 来自用户停止（CHG-0016 / ADR-041），不是错误：run 的 context 被取消，
+  进程树被杀，已完成的阶段与 checkpoint 保留；队列继续下一项。
 - 每个状态转移都必须落 `runs/<run_id>.jsonl` 一行（可审计）。
 
 ## 9. 安全边界
@@ -204,5 +216,5 @@ done/failed/canceled → (retry) → queued（从最近 checkpoint 续）
 | 网络 | 主进程只出站到 registry 声明的下载域名 + 用户配置的 LLM endpoint；无本地监听端口（MCP http 模式除外，仅 127.0.0.1 + token） |
 | 文件 | 引擎进程只能拿到 workdir 内的路径；下载文件名白名单校验（防 `../` 穿越） |
 | 密钥 | DPAPI 加密，日志层脱敏，禁止出现在 bundle 与崩溃报告 |
-| 进程 | Job Object 绑定，防孤儿；引擎二进制启动前校验 sha256 |
+| 进程 | 子进程用 context 取消；Windows 停止时 `taskkill /T /F` 连孙进程（python→ffmpeg）一起结束，`WaitDelay` 兜底防挂起；Job Object 绑定仍是后续可选强化 |
 | 供应链 | 所有下载物 sha256 强校验；release 产物附 `SHA256SUMS.txt`；CI 用 pinned action 版本 |

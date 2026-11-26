@@ -1,0 +1,62 @@
+change_id: CHG-0016
+spec_version: 1
+state: GOAL_ACTIVE
+objective: "CUDA 运行时真产出并真被使用；probe/UI/meta 口径一致；首页拖入暂存+开始、输出目录选择/打开、停止任务、资料库与模型中心打开目录；最低操作集写入 UI-DESIGN"
+milestones:
+  - id: M0
+    title: "环境自检（vcvars/nvcc/cmake/ninja/源码通路）"
+    state: done
+    evidence: tmp/evidence/chg0016/m0-toolchain.txt
+  - id: M1
+    title: "CUDA 构建→stage→上传→registry 实测→安装→对照测速→后端口径统一"
+    state: done
+    evidence:
+      - tmp/evidence/chg0016/m1-build-fatbin.log
+      - tmp/evidence/chg0016/m1-stage.log
+      - tmp/evidence/chg0016/m1-bench-summary.txt
+      - tmp/evidence/chg0016/ac01-cuda-vs-vulkan.json
+      - tmp/evidence/chg0016/ac02-install.txt
+      - tmp/evidence/chg0016/ac03-backend-consistency.txt
+    note: "干净 workdir 安装退出 0、--help 退出 0、VERIFIED.json 记录实测 sha256，装后 849.8 MB；下载中途被 HTTP/2 打断后从 .part 续传完成"
+  - id: M2
+    title: "首页拖入区+暂存+开始（取代 ADR-040）"
+    state: done
+    evidence: tmp/evidence/chg0016/ui/home.png
+  - id: M3
+    title: "输出目录选择/打开/可写探针"
+    state: done
+    evidence:
+      - tmp/evidence/chg0016/ui/home.png
+      - internal/webapi/handler_test.go
+      - tmp/evidence/chg0016/ac05-output-dir.txt
+  - id: M4
+    title: "停止任务（Service cancel + 队列 stop + 进程树 + canceled）"
+    state: done
+    evidence:
+      - tmp/evidence/chg0016/m4-stop-live.txt
+      - tmp/evidence/chg0016/ac06-resume.log
+      - internal/engine/proc_windows_test.go
+      - internal/runctl/service_queue_test.go
+  - id: M5
+    title: "资料库/模型中心打开目录；队列行阶段+耗时；能力页文案"
+    state: done
+    evidence:
+      - tmp/evidence/chg0016/ui/library.png
+      - tmp/evidence/chg0016/ui/models.png
+      - tmp/evidence/chg0016/ui/params.png
+  - id: M6
+    title: "全量 E2E、Checkfix、文档、CHG 关闭、提交（需 owner 同意）"
+    state: in_progress
+    evidence:
+      - tmp/evidence/chg0016/ac11-checkfix.txt
+    note: "全量 Checkfix 绿、文档同步完成；AC 全绿，剩 owner 授权后的显式列文件 commit/push"
+current_milestone: M6
+evidence: []
+blockers:
+  - "commit/push 需 owner 明确授权（goal-state authorization 均为 false）"
+authorization:
+  commit: true
+  push: true
+  authorized_by: owner
+  authorized_at: 2026-11-26
+  scope: "AC 全绿后的显式列文件提交与推送"

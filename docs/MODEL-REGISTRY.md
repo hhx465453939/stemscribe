@@ -157,7 +157,30 @@ else                              -> cuda12
 
 - NVIDIA：优先 `cuda12`（性能最好），退化 `vulkan`（跨厂商，性能中），再 `directml`（Windows 原生，兼容好），最后 `cpu`。
 - AMD/Intel：`vulkan` → `directml` → `cpu`。
-- 选择结果**必须显示在 UI**（设置 → 硬件 → "当前后端：CUDA 12（自动）"），且允许手动锁定（锁定后不自动降级，OOM 直接报错——给高级用户确定性）。
+- **已安装集合同样是输入**：`probe`、`/api/capabilities` 与任务 meta 共用 `runctl.BackendReport`；
+  硬件偏好 cuda12 但只装了 vulkan 时，三处都报告 `vulkan`，reason 写明「cuda12 未安装」。
+  只看硬件会让 probe 说 cuda12、实际跑 vulkan，这是 CHG-0016 修掉的谎报。
+- 选择结果**必须显示在 UI**（侧栏 `CUDA 12 · RTX 3060` / `VULKAN · RTX 3060`，悬停给原因），且允许手动锁定（锁定后不自动降级，OOM 直接报错——给高级用户确定性）。
+
+### 5.1 CUDA 运行时的构建与分发（CHG-0016）
+
+- CI 的 `build-cuda` 需要 CUDA runner；GitHub 托管 runner 没有工具链，因此本机脚本是主路径：
+  `scripts/build-runtime-cuda.ps1`（VS2019/2022 + CUDA 12.4 + CMake）。
+- 归档必须自带 `cudart64_12.dll`、`cublas64_12.dll`、`cublasLt64_12.dll`。
+  `stage-runtime.ps1` 对三件 DLL 做硬断言，并在打包前执行 `--help` 冒烟：缺 DLL 的 exe
+  只会在开发机（工具包在 PATH）上正常，用户的机器会直接起不来。
+- **三件缺一不可（实测，不是猜的）**：`dumpbin /dependents` 显示 exe 只导入 `cudart64_12.dll`
+  与 `cublas64_12.dll`，但后者自身导入 `cublasLt64_12.dll`；只放两件的干净目录里启动
+  `whisper-cli.exe` 直接 `0xC0000135`（DLL 未找到）。所以 472 MB 的 `cublasLt64_12.dll`
+  不能省。
+- 体积实测（1.9.5，archs 52/61/75/86，`-Xfatbin=-compress-all`）：exe 303 MiB + CUDA DLL 547 MiB
+  → zip **574 MiB**。fatbin 压缩只把 exe 从 539 MiB 压到 303 MiB，zip 几乎不变（Deflate 对已压缩
+  cubin 无能为力），它的价值在解压后占盘更小。
+- 只有归档成功上传后才能把 registry 的 `size` / `sha256` 写成实测值并删除 `tbd`；
+  上传失败就保持 `tbd:true`，UI 明示「CUDA 运行时未分发，当前用 Vulkan（也是 GPU）」。
+  **禁止**用估算值填空。
+- 构建失败的回退路线：上游官方 1.8.2 `whisper-cublas-12.4.0-bin-x64.zip`（实测可达），
+  作为独立版本条目登记，并在 CHG 中记录版本不一致这一事实。
 
 ## 6. 许可与合规（开源发布的硬约束）
 
@@ -177,12 +200,12 @@ else                              -> cuda12
 |---|---|---|
 | Stemscribe 主程序（Wails + 前端静态产物） | ✅ | ~22 MB |
 | ffmpeg（静态精简版） | ❌ 运行时下载 | ~68 MB |
-| whisper.cpp cuda12 二进制 | ❌ | ~48 MB |
+| whisper.cpp cuda12 二进制 | ❌ | ~574 MB（exe 303 MiB + CUDA DLL 547 MiB，实测） |
 | Python embed + audio-separator + onnxruntime-gpu | ❌ | ~180–420 MB |
 | whisper medium-q5_0 权重 | ❌ | ~540 MB |
 | MDX-Net ONNX 权重 | ❌ | ~63 MB |
 | **portable zip 合计** | — | **目标 ≤ 40 MB**（仅主程序 + 图标 + 文档） |
 
-**首次安装最小可用集合**（均衡档）：ffmpeg + whisper cuda + medium-q5_0 + 一个 MDX 模型 ≈ **720 MB**（不含 Python 分离运行时；若走 Python 分离路线再加 ~300 MB）。
+**首次安装最小可用集合**（均衡档，GPU 走 CUDA）：ffmpeg 68 MB + whisper cuda 574 MB + large-v3 2.9 GB + 一个 MDX 模型 64 MB ≈ **3.6 GB**（不含 Python 分离运行时；若走 Python 分离路线再加 ~1 GB）。选 cpu/vulkan 运行时则 whisper 部分降到 1 MB / 15 MB，这是首次安装体积与速度的取舍。
 
 > 若最终实测超预算，优先砍的是「Python 分离运行时」——改为纯 ONNX Runtime 的 C++ 分离器（打包 ~25 MB）。这是 ADR-002 的备选路径，登记为 CHG-0002 的决策点。

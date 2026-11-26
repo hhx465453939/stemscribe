@@ -9,15 +9,12 @@ set -uo pipefail
 fail=0
 scan() {
   local name="$1" pattern="$2"
-  # Exclude vendored/generated trees and this script itself.
+  # Scan exactly what could reach the repository: tracked files plus untracked
+  # files that are not ignored. Scanning the whole tree meant local build logs
+  # under tmp/ (CMake dumps the developer's PATH) and dist/ artifacts produced
+  # "hits" that can never be committed, which trains people to ignore the check.
   local hits
-  hits=$(grep -rInE "$pattern" \
-      --include='*.go' --include='*.ts' --include='*.tsx' --include='*.js' \
-      --include='*.mjs' --include='*.json' --include='*.yml' --include='*.yaml' \
-      --include='*.md' --include='*.ps1' --include='*.sh' \
-      . 2>/dev/null \
-    | grep -vE '^\./(node_modules|frontend/node_modules|frontend/\.next|frontend/out)/' \
-    | grep -vE '^\./\.git/' \
+  hits=$(grep -nIE "$pattern" ${files[@]+"${files[@]}"} 2>/dev/null \
     | grep -vE '(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)' \
     | grep -vE 'scripts/redact-scan\.sh' \
     || true)
@@ -26,6 +23,13 @@ scan() {
     fail=1
   fi
 }
+
+mapfile -d '' files < <(git ls-files -z -co --exclude-standard -- \
+  '*.go' '*.ts' '*.tsx' '*.js' '*.mjs' '*.json' '*.yml' '*.yaml' '*.md' '*.ps1' '*.sh' 2>/dev/null)
+if [ "${#files[@]}" -eq 0 ]; then
+  echo "redact-scan: no files to scan (not a git checkout?)"
+  exit 1
+fi
 
 # Require all four octets: a looser pattern matched version strings such as
 # "espree@10.4.0" in lockfiles and produced nothing but false positives.

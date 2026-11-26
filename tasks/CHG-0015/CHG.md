@@ -40,6 +40,10 @@ Go 不碰张量（ADR-002）。用 `audio-separator`（UVR5 的 Python 推理栈
 拖入不是“填空”，是命令。`OnFileDrop` 收到路径后直接 `POST /api/queue`，
 用户不需要再点开始。队列沿用后端串行 worker。
 
+> **已被 CHG-0016 / ADR-042 取代**（2026-11-26，owner 端到端反馈）：拖入只暂存路径，
+> 用户确认后点「开始转换」才入队。ADR-040 的「拖入即跑」让用户没有机会核对文件、
+> 模型与输出目录，也无法批量确认。本条保留作历史记录，不再是现行行为。
+
 ## 影响面
 
 - `internal/engine`：新增 `separator.go` + 内嵌 Python helper；`locate` 增加分离运行时/模型解析。

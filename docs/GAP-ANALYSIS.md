@@ -109,7 +109,7 @@
 
 | 能力 | 它有 | 我们 | 差距 |
 |---|---|---|---|
-| GPU 加速 | DirectCompute（D3D11） | vulkan ✅ / cuda12（无 CI 硬件，`tbd`）/ cpu | 已有，但 cuda12 未发布 |
+| GPU 加速 | DirectCompute（D3D11） | cuda12 ✅（本机构建并发布，实测 1.37× vulkan）/ vulkan ✅ / cpu ✅ | 已对齐；cuda12 归档 ~574 MiB，见 MODEL-REGISTRY §5.1 |
 | 相对速度（medium, 1080Ti） | 10.6× 实时 | medium 未测（模型未装） | 待实测 |
 | 首次启动引导下载模型 | ✅ 推荐 `ggml-medium.bin` | 模型中心可装（sha256 未实测的会被拒） | 有，但多数条目标记 `tbd` |
 | 采集侧 VAD | ✅（自研算法） | ❌ 需 silero VAD 模型，registry 无此条目 | 缺 |
