@@ -15,7 +15,7 @@
 |---|---|---|
 | CPU（现状） | `audio-separator` + `onnxruntime` + `audioread` | 1.0 GB（CHG-0017 实测） |
 | CUDA（CHG-0017） | 上述 + `onnxruntime-gpu==1.21.1` + nvidia cu12 轮子 | 3.7 GB（实测） |
-| CUDA + torch 架构（本 CHG） | 上述，把 `torch` 换成 `torch==2.5.1+cu121` | 约 6.1 GB（3.7 − 0.2 + 2.45，实施时实测） |
+| CUDA + torch 架构（本 CHG） | 上述，把 `torch` 换成 `torch==2.14.1+cu126` + `torchvision==0.29.1+cu126` | 7,243 MB（2026-11-26 实测） |
 
 CPU 档也可以跑 torch 架构（VR/Demucs 在 CPU 上可用，只是慢），所以「架构」和「设备」
 是两张正交的表：架构决定模型文件与代码路径，设备决定同一个 venv 里哪套库生效。
@@ -23,10 +23,16 @@ CPU 档也可以跑 torch 架构（VR/Demucs 在 CPU 上可用，只是慢），
 
 ### 1.2 安装与探测
 
-- `separatorPackages(accel)`：CUDA 档追加
-  `torch==2.5.1+cu121`（`--index-url https://download.pytorch.org/whl/cu121`，失败回退阿里云
-  pytorch-wheels 镜像；两者都不可达则安装失败并给出明确错误，不降级到 CPU 冒充 CUDA）。
-- 安装顺序：先卸 `torch`，再装 CUDA 轮子；避免 pip 解析回 CPU 版。
+- `separatorPackages(accel, torch bool)`：CUDA + torch 档追加
+  `torch==2.14.1+cu126`、`torchvision==0.29.1+cu126`（索引顺序：
+  `STEMSCRIBE_TORCH_INDEX` 显式覆盖 → `mirror.sjtu.edu.cn/pytorch-wheels/cu126/`
+  → `download.pytorch.org/whl/cu126` → 阿里云 pytorch-wheels；全部不可达则安装失败并给出
+  明确错误，不降级到 CPU 冒充 CUDA）。
+  版本选择依据（实测）：PyPI 的 torch 是 2.15.0+cpu；torchvision 0.29.2 要求 `torch>=2.14.0`，
+  2.5.1+cu121 会破坏依赖，故取同一代的 2.14.1+cu126（驱动 566.36 满足）。
+- 安装顺序：先卸 `torch`/`torchvision`，再装 CUDA 轮子，**最后**才装 audio-separator。
+  反过来 pip 会先拉 700 MB 的 CPU torch 再被替换；先装 CUDA 轮子时 `torch>=2.3` 已满足，
+  不会再下载 CPU 版（`installTorchCUDA` 的注释记录了这条实测）。
 - 探针扩展（`separatorProbeScript`）：
 
   ```
@@ -95,6 +101,13 @@ MDX 必须 `.onnx`，torch 架构不能只给 `.onnx`）；`stems` 必须含 `vo
 > 实施时先剔除许可证不允许或质量不达标的模型；目标 ≥8 条中允许包含现有
 > `uvr-mdx-kim-vocal-2` 以外的模型。**每条都要下载后实测 sha256 才能写进 registry**，
 > 未实测的条目保持 `tbd:true`，install 拒绝安装（规则不变）。
+>
+> **实施结果（2026-11-27）**：入库 8 条 = 表中 Kim、UVR-MDX-NET Inst HQ 3、5_HP-Karaoke-UVR、
+> htdemucs、htdemucs_ft、htdemucs_6s，另加实测通过的 `UVR-MDX-NET-Voc_FT.onnx`、
+> `UVR_MDXNET_KARA.onnx`。BS-Roformer-SW 与 MDX23C-8KFFT 本轮不入（体积大、参数面未开放、
+> 许可未逐条证实）。原条目 `uvr-vr-hp2-vocals` 移除：其尾部 MD5 不在
+> `vr_model_data.json`，audio-separator 必报 `Unsupported Model File`。
+> `UVR-DeEcho-DeReverb` 校验全过但产物是「No Reverb」两轨，不是 vocals，超出分离契约，不入库。
 
 ### 2.3 模型安装与工作目录
 
@@ -140,20 +153,25 @@ UI 允许勾选；磁盘预检把轨数与 44.1 kHz 立体声体积计入（30 m
   安装/升级进度沿用现有作业条。
 - 预设（设置页）：
   - 播客 / 口播 → `uvr-mdx-kim-vocal-2`（默认，保持 60 分体验）
-  - 音乐 → `htdemucs_ft`（4 轨）
-  - 卡拉 OK → `5_HP-Karaoke-UVR` 或 Roformer Karaoke（许可允许时）
+  - 音乐 → `demucs-htdemucs-ft`（4 轨）
+  - 卡拉 OK → `uvr-vr-karaoke`（5_HP-Karaoke-UVR，VR）或 `mdx-karaoke`（纯 ONNX，无需 torch 档）
 - 切换模型只改 settings + 确保模型已装，不需要重装运行时。
 
 ## 5. 参数、显存与优化
 
 1. **参数映射**（audio-separator arch 配置）：
 
-   | 参数 | MDX | Demucs | Roformer |
-   |---|---|---|---|
-   | `segment_size` | `mdx_params.segment_size` | `demucs_params.segment_size` | — |
-   | `overlap` | `mdx_params.overlap` | `demucs_params.overlap` | — |
-   | `shifts` | — | `demucs_params.shifts` | — |
-   | `batch_size` | — | — | `roformer_params.batch_size` |
+   | 参数 | MDX | VR | Demucs | MDXC | Roformer |
+   |---|---|---|---|---|---|
+   | `segment_size` | `mdx_params.segment_size`（STFT 帧） | — | `demucs_params.segment_size`（秒） | `mdxc_params.segment_size` | — |
+   | `overlap` | `mdx_params.overlap` | — | `demucs_params.overlap` | `mdxc_params.overlap` | — |
+   | `shifts` | — | — | `demucs_params.shifts` | — | — |
+   | `batch_size` | `mdx_params.batch_size` | `vr_params.batch_size` | — | `mdxc_params.batch_size` | — |
+
+   > 源码核实（audio-separator 0.48）：`Separator.__init__` 只接收 `mdx_params`/`vr_params`/
+   > `demucs_params`/`mdxc_params` 四个字典，**没有** `roformer_params`——Roformer 在 0.48 没有
+   > 可调参数面。另外这些字典是整体替换而不是差量合并，helper 必须以完整默认值为底再覆盖，
+   > 否则只传一个键会丢掉 `hop_length` 等其他默认值。已按此实现（见 M6 证据）。
 
 2. **显存校准**：每次成功运行记录峰值显存（已有 NVML 采样），写 `config/calibration.json`；
    预检用实测值而非 registry 静态值；没有实测时回退 registry 估算并标注「估算」。
@@ -166,7 +184,7 @@ UI 允许勾选；磁盘预检把轨数与 44.1 kHz 立体声体积计入（30 m
 ## 6. 调度与首装体积
 
 - 任务队列仍保证分离与转写不并发（单 GPU）。
-- 首装组合（GPU）：whisper cuda 574 MB + large-v3 2.9 GB + ffmpeg 68 MB + 分离运行时 6.1 GB
+- 首装组合（GPU）：whisper cuda 574 MB + large-v3 2.9 GB + ffmpeg 68 MB + 分离运行时 7.2 GB（含 torch 档）
   + 模型（Demucs ft 约 337 MB / Roformer 约 700 MB）≈ 10 GB 量级。模型中心必须逐项显示，
   不允许只给一个总数。
 - 只要人声分离的用户可只装 CUDA ONNX 档（3.7 GB）+ MDX 模型（64 MB），不装 torch 档。
@@ -212,4 +230,4 @@ grep -n "torch_device" .../audio_separator/separator/architectures/vr_separator.
 | T4 | 多轨流水线 + bundle/meta | 4/6 轨端到端，转写输入不变 |
 | T5 | UI 模型中心 + 预设 + 许可提示 | 截图与 i18n 检查 |
 | T6 | 参数映射 + 校准 + 热启动 | 参数生效表；热/冷启动对比 |
-| T7 | 基准、文档、ADR-039 | 文档更新 + Checkfix |
+| T7 | 基准、文档、ADR-043 | 文档更新 + Checkfix |

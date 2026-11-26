@@ -60,6 +60,8 @@
       "family": "separator",
       "engine": "separator",
       "display_name": "UVR5 · Kim Vocal 2 (MDX-NET)",
+      "architecture": "mdx",
+      "params": { "segment_size": true, "overlap": true, "batch_size": true },
       "stems": ["vocals", "instrumental"],
       "files": [
         { "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/Kim_Vocal_2.onnx",
@@ -74,12 +76,54 @@
       "segment_default_s": 15,
       "license": { "spdx": "MIT", "url": "https://github.com/Anjok07/ultimatevocalremovergui" },
       "source": "https://huggingface.co/lainlives/audio-separator-models"
+    },
+    {
+      "id": "demucs-htdemucs",
+      "family": "separator",
+      "engine": "separator",
+      "display_name": "Demucs v4 · htdemucs (4 stems)",
+      "architecture": "demucs",
+      "params": { "segment_size": true, "overlap": true, "shifts": true },
+      "stems": ["vocals", "drums", "bass", "other"],
+      "files": [
+        { "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/htdemucs.yaml",
+          "size": 21, "sha256": "239c445d0b14454d541ad8bd9bb271c9e536d267e8a4625208744cbb2e7bb66c", "dest": "htdemucs.yaml" },
+        { "url": "https://hf-mirror.com/lainlives/audio-separator-models/resolve/main/955717e8-8726e21a.th",
+          "size": 84141911, "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4", "dest": "955717e8-8726e21a.th" }
+      ],
+      "vram_estimate_mb": 3800,
+      "disk_after_install_mb": 81,
+      "quality_tier": "balanced",
+      "license": { "spdx": "CC-BY-NC-4.0", "nonCommercial": true,
+                   "url": "https://github.com/facebookresearch/demucs/blob/main/LICENSE" },
+      "source": "https://huggingface.co/lainlives/audio-separator-models"
     }
   ]
 }
 ```
 
-### 2.1 字段语义（易误解的才列）
+### 2.1 分离模型族（`architecture` 决定运行时与参数面）
+
+| `architecture` | 推理栈 | 参数面（`params`） | 加载方式 |
+|---|---|---|---|
+| `mdx` | ONNX Runtime | `segment_size`（STFT 帧）、`overlap`、`batch_size` | 按文件尾部 MD5 查 `mdx_model_data.json` |
+| `vr` | PyTorch | `batch_size` | 按文件尾部 MD5 查 `vr_model_data.json` |
+| `demucs` | PyTorch | `segment_size`（**秒**）、`overlap`、`shifts` | YAML 点名同目录 `.th` |
+| `mdxc` | PyTorch | `segment_size`、`overlap`、`batch_size` | `.ckpt` + YAML 配置 |
+| `roformer` | PyTorch | 无（audio-separator 0.48 不开放 roformer 参数） | YAML + `.ckpt` |
+
+MDX/VR 的「尾部 MD5」是 audio-separator `get_model_hash()` 的实现：文件 ≥ 10 240 000 字节时
+只哈希最后 10 240 000 字节。参数的 MD5 不在 `model_data` 里就加载失败（`Unsupported Model File`），
+所以**选模型前必须先验证 MD5 在 `internal/engine/separator_meta/*.json` 内**——体积和 sha256
+都对也救不了。CHG-0018 因此移除了 `uvr-vr-hp2-vocals`（MD5 不在上游数据里）。
+
+Demucs 的 YAML 决定入口文件：`{ "models": ["955717e8"] }` 经前缀匹配找到同目录的
+`955717e8-8726e21a.th`。因此 `FindModel` 要求**清单全在**才判定「已安装」，
+并把 YAML 交给 audio-separator（不是第一个文件）。
+
+多文件模型的 `VERIFIED.json` 额外记录 `files[]`（dest/sha256/size），单文件模型保持原格式。
+
+### 2.2 字段语义（易误解的才列）
 
 | 字段 | 语义 | 陷阱 |
 |---|---|---|
@@ -113,6 +157,7 @@
 | 变体 | pip 包 | 何时选 |
 |---|---|---|
 | CUDA | `audio-separator` + `onnxruntime-gpu==1.21.1` + `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` + `nvidia-cufft-cu12` + `nvidia-curand-cu12` + `nvidia-cuda-runtime-cu12` + `audioread` | `nvidia-smi` 可用且驱动 ≥ 最低版本 |
+| CUDA + torch | 上述，另把 `torch`/`torchvision` 换成 `torch==2.14.1+cu126` + `torchvision==0.29.1+cu126`（SJTU 镜像 → 官方 → 阿里云，`STEMSCRIBE_TORCH_INDEX` 可覆盖） | 装了 `architecture` 为 `vr`/`demucs`/`mdxc`/`roformer` 的模型 |
 | CPU | `audio-separator` + `onnxruntime` + `audioread` | 其他情况 |
 
 两个容易踩的点（都实测过）：
@@ -126,6 +171,16 @@
 `CUDAExecutionProvider` 会话**，只有 session 实际激活 CUDA 才写 `accel=cuda12`；
 否则写 `accel=cpu` + `accel_reason`，并在模型中心与能力页显性标注——CUDA 依赖
 （cublas/cufft/cudnn）由 nvidia-* wheel 自带，不要求用户预装 CUDA toolkit。
+
+torch 档同样要自证：`INSTALLED.json` 记录 `torch_backend`（`cuda`/`cpu`/`absent`）与
+`torch_version`，探针用真实 CUDA 张量运算（`torch.zeros(1, device="cuda").sum()`）。
+**ONNX 会话与 torch 必须分进程探测**：同一个进程先建 ONNX CUDA session 再 import torch，
+Windows 上 torch 的 `cudnn_cnn64_9.dll` 会加载失败（实测 `[WinError 127]`），
+探针会误报 `torch_backend=absent`。
+
+装完 7.2 GB 的 CUDA+torch 档后，运行期仍按模型 `architecture` 选栈：MDX 走 ONNX
+（`engine.log` 记 `runtime=onnx`），VR/Demucs 走 torch（`runtime=torch`），
+两者共用同一个 venv，互不降级。
 模型本身仍走 registry + hf-mirror + 实测 sha256，不例外。
 
 **必须守住的四条**
@@ -219,10 +274,14 @@ else                              -> cuda12
 | ffmpeg（静态精简版） | ❌ 运行时下载 | ~68 MB |
 | whisper.cpp cuda12 二进制 | ❌ | ~574 MB（exe 303 MiB + CUDA DLL 547 MiB，实测） |
 | Python venv + audio-separator + onnxruntime(-gpu) | ❌ | CPU **1.0 GB** / CUDA **3.7 GB**（实测 `du -sm`，含 nvidia cu12 轮子） |
+| 同上 + CUDA torch 档（`torch==2.14.1+cu126` + `torchvision`） | ❌ | **7,243 MB**（实测 `du -sm`，2026-11-26） |
 | whisper medium-q5_0 权重 | ❌ | ~540 MB |
-| MDX-Net ONNX 权重 | ❌ | ~63 MB |
+| MDX-Net ONNX 权重 | ❌ | 29–67 MB（实测：Kim 64 MB、Karaoke 29 MB） |
+| Demucs 4 轨权重（htdemucs / htdemucs_ft） | ❌ | 81 MB / 322 MB（实测，含 YAML 与 1–4 个 `.th`） |
+| Demucs 6 轨权重（htdemucs_6s） | ❌ | 53 MB |
 | **portable zip 合计** | — | **目标 ≤ 40 MB**（仅主程序 + 图标 + 文档） |
 
-**首次安装最小可用集合**（均衡档，GPU 走 CUDA）：ffmpeg 68 MB + whisper cuda 574 MB + large-v3 2.9 GB + 一个 MDX 模型 64 MB ≈ **3.6 GB**；GPU 分离运行时另加 **3.7 GB**（实测；CPU 变体 1.0 GB）。选 cpu/vulkan 运行时则 whisper 部分降到 1 MB / 15 MB，这是首次安装体积与速度的取舍。
+**首次安装最小可用集合**（均衡档，GPU 走 CUDA）：ffmpeg 68 MB + whisper cuda 574 MB + large-v3 2.9 GB + 一个 MDX 模型 64 MB ≈ **3.6 GB**；GPU 分离运行时另加 **3.7 GB**（实测；CPU 变体 1.0 GB）。装上任意 torch 架构模型（VR/Demucs）后，分离运行时再涨到 **7.2 GB**。
+选 cpu/vulkan 运行时则 whisper 部分降到 1 MB / 15 MB，这是首次安装体积与速度的取舍。
 
 > 若最终实测超预算，优先砍的是「Python 分离运行时」——改为纯 ONNX Runtime 的 C++ 分离器（打包 ~25 MB）。这是 ADR-002 的备选路径，登记为 CHG-0002 的决策点。
