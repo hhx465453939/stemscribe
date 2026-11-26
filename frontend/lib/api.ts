@@ -117,6 +117,10 @@ export interface CatalogItemView {
   version?: string;
   /** Absolute install directory; only present when installed. */
   path?: string;
+  /** Execution device a runtime provides: "cuda12" or "cpu". */
+  backend?: string;
+  /** Installed, but on a device this machine should not be using (CPU on a CUDA box). */
+  upgrade?: boolean;
 }
 
 export interface CatalogView {

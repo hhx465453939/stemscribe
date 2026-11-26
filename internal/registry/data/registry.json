@@ -280,7 +280,7 @@
           "dest": "Kim_Vocal_2.onnx"
         }
       ],
-      "vram_estimate_mb": 0,
+      "vram_estimate_mb": 2300,
       "ram_estimate_mb": 3200,
       "disk_after_install_mb": 64,
       "quality_tier": "max",
@@ -290,7 +290,7 @@
         "url": "https://github.com/Anjok07/ultimatevocalremovergui"
       },
       "source": "https://huggingface.co/lainlives/audio-separator-models",
-      "notes": "Default vocal extractor (ADR-038). Runs on the CPU onnxruntime provider, so no VRAM is used; 3.0 GB peak RSS measured on a 30 s clip. Byte size and sha256 measured on 2026-11-26 from hf-mirror."
+      "notes": "Default vocal extractor (ADR-038). Runs on onnxruntime's CUDA provider when the CUDA runtime is installed; 2300 MB VRAM measured on a 120 s clip (RTX 3060, nvidia-smi 2372 -> 4670 MiB), and it falls back to CPU (no VRAM) when only the CPU runtime is present. 3.0 GB peak RSS measured on a 30 s clip. Byte size and sha256 measured on 2026-11-26 from hf-mirror."
     }
   ]
 }

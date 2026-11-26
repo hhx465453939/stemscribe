@@ -98,14 +98,23 @@ for stage in DAG:
 分离走**外置 Python 进程**（`audio-separator`，UVR5 推理栈；ADR-002/ADR-038），Go 只负责编排：
 
 - 输入：`audio/full.wav`（44.1 kHz 立体声，demux 一次 ffmpeg 同时产出 44.1k 与 16k）。
-- 模型：`uvr-mdx-kim-vocal-2`（Kim Vocal 2，MDX-NET，注册表实测 sha256；CPU onnxruntime）。
+- 模型：`uvr-mdx-kim-vocal-2`（Kim Vocal 2，MDX-NET，注册表实测 sha256）。
+- 推理设备：ONNX Runtime。有可用 NVIDIA 驱动时安装 CUDA 版运行时并指定
+  `CUDAExecutionProvider`；没有则用 CPU 版。**设备是装出来的，不是猜出来的**：
+  安装时用一个小模型真跑一次会话，只有 session 实际激活 CUDA 才记录 `accel=cuda12`。
+- 设备自证：helper 记录每个 ONNX session 实际激活的 provider，结果 JSON 带
+  `backend/providers`；`engine.log` 每次分离写 `separate backend=… providers=…`，
+  `meta.provenance.engines.separate.backend` 与 `/api/capabilities.separation_backend`
+  同源。请求 CUDA 却落到 CPU 时记 `WARN` 并写明原因（ADR-004，禁止静默降级）。
 - 元数据：`download_checks.json` / `mdx_model_data.json` / `vr_model_data.json` 随程序内嵌，
   首次运行落到 `runtimes/separator/meta/` 并复制到模型目录——`audio-separator` 原本从
   raw.githubusercontent.com 拉取，而目标网络只通 hf-mirror，不内嵌会直接连接失败。
 - 输出：`vocals.wav`、`instrumental.wav`；随后 ffmpeg 把 vocals 转成 16 kHz 单声道
   `vocals16k.wav` 交给 whisper（44.1k 立体声直接喂 whisper 会变速，不是音质问题）。
 - 分段/交叉淡化由 `audio-separator` 内部完成；`SeparateOptions.SegmentSecs` 目前只做参数占位，
-  未参与计算（实测 30 s 素材 ~15 s，RTF ≈0.5，CPU）。
+  未参与计算。实测（RTX 3060，Kim Vocal 2，同一 venv 只换 `--accel`）：120 s 素材 CPU 76.3 s →
+  CUDA 25.1 s（3.0×）；30 min 整集 CPU 18 min 58 s → CUDA **3 min 51 s**（RTF 0.63 → 0.13，4.9×），
+  显存峰值 4617 MiB（基线 2372 MiB）。证据在 `tmp/evidence/chg0017/`。
 
 ### 4.2 转写切片
 

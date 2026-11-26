@@ -67,7 +67,7 @@
           "sha256": "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b",
           "dest": "Kim_Vocal_2.onnx" }
       ],
-      "vram_estimate_mb": 0,
+      "vram_estimate_mb": 2300,
       "ram_estimate_mb": 3200,
       "disk_after_install_mb": 64,
       "quality_tier": "max",
@@ -85,7 +85,7 @@
 |---|---|---|
 | `mirrors[].priority` | 越小越先试 | 失败才降级到下一镜像，不是并发 |
 | `archive.sha256` | **整包**校验 | 与解压后逐文件指纹分开：前者防传输损坏，后者防运行时目录被污染 |
-| `vram_estimate_mb` | 稳态显存占用**经验值** | 仅用于装前预检；真实值由首次运行后校准并写 `config/calibration.json`。分离模型跑 CPU onnxruntime，0 是真实值；whisper 族必须 >0 |
+| `vram_estimate_mb` | 稳态显存占用**经验值** | 仅用于装前预检；真实值由首次运行后校准并写 `config/calibration.json`。分离模型装 CUDA 运行时实测 **2300 MB**（120 s 素材，RTX 3060，nvidia-smi 2372 → 4670 MiB）；只装 CPU 运行时不占显存。whisper 族必须 >0 |
 | `disk_after_install_mb` | 安装后占用（含解压） | 预检用这个，不是 `size` |
 | `quality_tier` | `light` / `balanced` / `max` | 对应首次向导三档，不是质量评分 |
 | `license.spdx` | 权重许可 | UVR 系权重许可各异，registry 不做镜像分发，只指官方源 |
@@ -108,8 +108,25 @@
 
 **分离运行时是一个例外**：Python 环境带绝对路径和平台解释器，无法作为 registry archive 分发。
 `stemscribe runtime install separator-python` 用 uv（优先）或 `python -m venv` 建
-`runtimes/separator/venv`，再从 PyPI 安装 `audio-separator[cpu]`；装完用 import 探测并写
-`INSTALLED.json`。模型本身仍走 registry + hf-mirror + 实测 sha256，不例外。
+`runtimes/separator/venv`，再按硬件从 PyPI 安装两种变体之一：
+
+| 变体 | pip 包 | 何时选 |
+|---|---|---|
+| CUDA | `audio-separator` + `onnxruntime-gpu==1.21.1` + `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` + `nvidia-cufft-cu12` + `nvidia-curand-cu12` + `nvidia-cuda-runtime-cu12` + `audioread` | `nvidia-smi` 可用且驱动 ≥ 最低版本 |
+| CPU | `audio-separator` + `onnxruntime` + `audioread` | 其他情况 |
+
+两个容易踩的点（都实测过）：
+- `onnxruntime-gpu` 必须钉 1.21.1。1.24+ 是 CUDA 13 构建，provider DLL 依赖
+  `cublasLt64_13.dll`，566 系驱动直接加载失败。
+- `audioread` 必须显式列出。`audio-separator` 的 `uvr_lib_v5` 在 import 时就需要它，
+  但其包元数据已不再声明（librosa 1.x 去掉了这个依赖），干净 venv 会在 import 阶段
+  `ModuleNotFoundError`。
+
+两种 ONNX Runtime 发行包互斥，安装前会卸载另一支。装完用 **Identity 小模型真跑一次
+`CUDAExecutionProvider` 会话**，只有 session 实际激活 CUDA 才写 `accel=cuda12`；
+否则写 `accel=cpu` + `accel_reason`，并在模型中心与能力页显性标注——CUDA 依赖
+（cublas/cufft/cudnn）由 nvidia-* wheel 自带，不要求用户预装 CUDA toolkit。
+模型本身仍走 registry + hf-mirror + 实测 sha256，不例外。
 
 **必须守住的四条**
 1. **sha256 不可跳过**（`--no-verify` 仅在开发者模式且 UI 显红字警告时允许）。
@@ -129,7 +146,7 @@
 │   ├── venv/          Scripts/python.exe  Lib/site-packages/audio_separator/...
 │   ├── meta/          download_checks.json  mdx_model_data.json  vr_model_data.json
 │   ├── helper.py      # 内嵌脚本，首次运行落盘
-│   └── INSTALLED.json # {"version":"0.48.0","source_url":"https://pypi.org/project/audio-separator/"}
+│   └── INSTALLED.json # {"version":"0.48.0","accel":"cuda12","providers":["CUDAExecutionProvider","CPUExecutionProvider"],"source_url":"https://pypi.org/project/audio-separator/"}
 └── ffmpeg/
     └── 7.1/           ffmpeg.exe  ffprobe.exe  VERIFIED.json
 
@@ -201,11 +218,11 @@ else                              -> cuda12
 | Stemscribe 主程序（Wails + 前端静态产物） | ✅ | ~22 MB |
 | ffmpeg（静态精简版） | ❌ 运行时下载 | ~68 MB |
 | whisper.cpp cuda12 二进制 | ❌ | ~574 MB（exe 303 MiB + CUDA DLL 547 MiB，实测） |
-| Python embed + audio-separator + onnxruntime-gpu | ❌ | ~180–420 MB |
+| Python venv + audio-separator + onnxruntime(-gpu) | ❌ | CPU **1.0 GB** / CUDA **3.7 GB**（实测 `du -sm`，含 nvidia cu12 轮子） |
 | whisper medium-q5_0 权重 | ❌ | ~540 MB |
 | MDX-Net ONNX 权重 | ❌ | ~63 MB |
 | **portable zip 合计** | — | **目标 ≤ 40 MB**（仅主程序 + 图标 + 文档） |
 
-**首次安装最小可用集合**（均衡档，GPU 走 CUDA）：ffmpeg 68 MB + whisper cuda 574 MB + large-v3 2.9 GB + 一个 MDX 模型 64 MB ≈ **3.6 GB**（不含 Python 分离运行时；若走 Python 分离路线再加 ~1 GB）。选 cpu/vulkan 运行时则 whisper 部分降到 1 MB / 15 MB，这是首次安装体积与速度的取舍。
+**首次安装最小可用集合**（均衡档，GPU 走 CUDA）：ffmpeg 68 MB + whisper cuda 574 MB + large-v3 2.9 GB + 一个 MDX 模型 64 MB ≈ **3.6 GB**；GPU 分离运行时另加 **3.7 GB**（实测；CPU 变体 1.0 GB）。选 cpu/vulkan 运行时则 whisper 部分降到 1 MB / 15 MB，这是首次安装体积与速度的取舍。
 
 > 若最终实测超预算，优先砍的是「Python 分离运行时」——改为纯 ONNX Runtime 的 C++ 分离器（打包 ~25 MB）。这是 ADR-002 的备选路径，登记为 CHG-0002 的决策点。

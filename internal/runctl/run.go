@@ -315,7 +315,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			status, stageState = "canceled", "canceled"
 		}
-		meta := BuildMeta(videoID, o.Title, absInput, status, engName, engVersion, backendName, modelID, sepModelID, sepVersion, params)
+		meta := BuildMeta(videoID, o.Title, absInput, status, engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
 		meta.Stages[string(result.FailedAt)] = store.StageRun{State: stageState, Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		return out, fmt.Errorf("failed at %s: %w", result.FailedAt, err)
@@ -329,7 +329,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		return out, fmt.Errorf("export: %w", err)
 	}
 
-	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, backendName, modelID, sepModelID, sepVersion, params)
+	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}
@@ -340,6 +340,16 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	out.Segments = len(segs)
 	out.Completed = result.Completed
 	return out, nil
+}
+
+// separatorBackend reports the device the separator actually used in this run.
+// Empty when the separator never ran (for example a failure during demux), which
+// is left empty rather than guessed.
+func separatorBackend(eng pipeline.Engine) string {
+	if c, ok := eng.(*engine.Composite); ok && c.Separator != nil {
+		return c.Separator.LastBackend
+	}
+	return ""
 }
 
 // modelLadder orders the whisper models from largest to smallest. A downgrade

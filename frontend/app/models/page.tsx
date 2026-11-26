@@ -155,6 +155,22 @@ export default function ModelsPage() {
                 {installed ? (
                   <>
                     <span className="dot dot--done" aria-hidden /> {t("models.verified")}
+                    {m.backend ? (
+                      <span className="tag" style={{ marginLeft: "var(--sp-2)" }}>
+                        {m.backend === "cuda12" ? "CUDA" : "CPU"}
+                      </span>
+                    ) : null}
+                    {m.upgrade ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ marginLeft: "var(--sp-3)" }}
+                        disabled={busy || running}
+                        onClick={() => void install(m.id)}
+                      >
+                        {busy ? `${t("models.installing")}${job && job.percent > 0 ? ` ${job.percent}%` : ""}` : t("models.upgradeCuda")}
+                      </button>
+                    ) : null}
                     {m.path ? (
                       <button
                         type="button"

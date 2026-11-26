@@ -25,6 +25,11 @@ type CatalogItem struct {
 	// when the item is actually installed.
 	Version string `json:"version,omitempty"`
 	Path    string `json:"path,omitempty"`
+	// Backend is the device a runtime actually provides (cuda12/cpu for the
+	// separation venv). Upgrade marks an installed item whose device is not what
+	// this machine should have -- the Python runtime was CPU-only on a GPU box.
+	Backend string `json:"backend,omitempty"`
+	Upgrade bool   `json:"upgrade,omitempty"`
 }
 
 // Catalog is the split the model centre renders.
@@ -74,18 +79,30 @@ func CatalogNow(workdir string) (Catalog, error) {
 	// -- the window would tell the user to run a command it does not offer.
 	{
 		_, sepOK := engine.FindSeparatorPython(workdir)
+		info := engine.ReadSeparatorRuntime(workdir)
+		accel := info.Accel
+		if accel == "" {
+			// Installs predating the accel record are the CPU-only environment.
+			accel = "cpu"
+		}
 		sep := CatalogItem{
 			ID:        engine.SeparatorRuntimeID,
 			Name:      "UVR5 separator (Python venv)",
 			Kind:      "runtime",
 			License:   "MIT",
-			SizeMB:    1040, // measured on a clean venv with audio-separator[cpu]
+			SizeMB:    separatorRuntimeSizeMB(accel),
 			Installed: sepOK,
 			Version:   engine.SeparatorVersion(workdir),
 			Path:      filepath.Join(workdir, "runtimes", "separator"),
+			Backend:   accel,
+			// A CPU install on a machine that can do CUDA is exactly the state that
+			// made separation hammer the CPU while the GPU idled; offer the upgrade
+			// instead of a dead-end "verified".
+			Upgrade: separatorNeedsUpgrade(sepOK, accel, SeparatorDesiredAccel()),
 		}
 		if !sepOK {
 			sep.Path = ""
+			sep.Upgrade = false
 		}
 		if sepOK {
 			out.Installed = append(out.Installed, sep)
@@ -129,4 +146,25 @@ func CatalogNow(workdir string) (Catalog, error) {
 	}
 
 	return out, nil
+}
+
+// separatorRuntimeSizeMB is the installed footprint of the Python environment.
+//
+// The CPU number was measured on a clean venv with audio-separator[cpu]; the CUDA
+// number adds onnxruntime-gpu and the nvidia-* wheels that carry cublas/cufft/
+// cudnn. Both are shown before install, so both are measured, not estimated.
+func separatorRuntimeSizeMB(accel string) int {
+	if accel == "cuda12" {
+		// Measured 2026-11-26 on the real workdir after upgrading in place:
+		// audio-separator + torch-cpu + onnxruntime-gpu + the nvidia cu12 wheels.
+		return 3728
+	}
+	return 1040
+}
+
+// separatorNeedsUpgrade reports whether an installed environment runs on a
+// different device than this machine wants, i.e. the Models page should offer
+// the CUDA upgrade. Not installed means "install", not "upgrade".
+func separatorNeedsUpgrade(installed bool, accel, desired string) bool {
+	return installed && accel != desired
 }

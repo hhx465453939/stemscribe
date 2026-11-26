@@ -193,6 +193,18 @@ func buildSeparator(workdir string, reg registry.Registry, sepModelID string) (*
 	if display == "" {
 		display = sepModelID
 	}
+	// The installer decides and records the device; an install made before the
+	// record existed is CPU-only, which is exactly what an empty accel means.
+	info := engine.ReadSeparatorRuntime(workdir)
+	accel := info.Accel
+	if accel == "" {
+		accel = "cpu"
+	}
+	if accel == "cuda12" {
+		display += " · CUDA"
+	} else {
+		display += " · CPU"
+	}
 	return &engine.Separator{
 		Python:    python,
 		Helper:    helper,
@@ -201,6 +213,7 @@ func buildSeparator(workdir string, reg registry.Registry, sepModelID string) (*
 		ModelFile: filepath.Base(modelPath),
 		FFmpegExe: ffmpeg,
 		Version:   engine.SeparatorVersion(workdir),
+		Accel:     accel,
 	}, display, nil
 }
 
@@ -272,8 +285,10 @@ func copyFile(src, dst string) error {
 // BuildMeta assembles the bundle metadata, including a truthful provenance record.
 // modelID and sepModelID are recorded because a transcript without them cannot be
 // reproduced or compared (AC-01/AC-03). backend is the runtime that actually ran;
-// leaving it out made "which backend produced this?" unanswerable after the fact.
-func BuildMeta(videoID, title, inputPath, status, engName, engVersion, backend, modelID, sepModelID, sepVersion string, params engine.WhisperParams) store.Meta {
+// sepBackend is the separation device the helper reported (cuda12 or cpu) -- the
+// record used to hardcode "cpu", so a GPU separation was indistinguishable from a
+// CPU one after the fact.
+func BuildMeta(videoID, title, inputPath, status, engName, engVersion, backend, modelID, sepModelID, sepVersion, sepBackend string, params engine.WhisperParams) store.Meta {
 	if title == "" {
 		title = filepath.Base(inputPath)
 	}
@@ -286,9 +301,11 @@ func BuildMeta(videoID, title, inputPath, status, engName, engVersion, backend, 
 	}
 	if sepModelID != "" {
 		// The separator runs in its own Python environment: recording the whisper
-		// version here would be a provenance lie. Its backend is the CPU onnxruntime
-		// we install; saying "cuda12" here would be a second lie.
-		engines["separate"] = store.EngineInfo{Name: "uvr5", Version: sepVersion, Backend: "cpu", ModelID: sepModelID}
+		// version here would be a provenance lie. sepBackend comes from the helper's
+		// own report of the ONNX providers it activated, not from the requested
+		// device -- a run that fell back to CPU is recorded as CPU. Empty means the
+		// stage never ran, and is left empty rather than guessed.
+		engines["separate"] = store.EngineInfo{Name: "uvr5", Version: sepVersion, Backend: sepBackend, ModelID: sepModelID}
 	}
 	return store.Meta{
 		VideoID: videoID,

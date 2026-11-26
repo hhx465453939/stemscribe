@@ -68,8 +68,8 @@
 
 > 度量不同不可直接相减：7.12% 是旧粗估上界，6.42% 是真编辑距离。结论只有一条：
 > large-v3 + 先分离**没有变差**，且逐字稿来自纯人声轨。
-> 代价是分离把 30 分钟素材的端到端拉到 ~24 分钟；分离是必选前置（ADR-037），
-> 想加速需要 GPU onnxruntime 或更小的分离模型，不是跳过分离。
+> 表中 18 min 58 s 是 CPU 分离基线；CHG-0017 把分离切到 CUDA 后同素材降到 ~3 min 51 s（见 §2.1），
+> 30 分钟一集的端到端由 ~24 分钟降到 ~9 分钟。分离仍是必选前置（ADR-037），不是跳过分离。
 
 ---
 
@@ -79,7 +79,7 @@
 
 | 能力 | UVR 有 | 我们 | 差距 |
 |---|---|---|---|
-| MDX-Net / VR / Demucs v3/v4 三种架构 | ✅ | ✅ MDX-Net（`Kim_Vocal_2.onnx`，`audio-separator` 0.48.0，CPU onnxruntime） | VR/Demucs 未接（registry 可加，代码同一条路径） |
+| MDX-Net / VR / Demucs v3/v4 三种架构 | ✅ | ✅ MDX-Net（`Kim_Vocal_2.onnx`，`audio-separator` 0.48.0，CUDA 12 onnxruntime；无 GPU 时 CPU 并显性标注） | VR/Demucs 未接（registry 可加，代码同一条路径） |
 | 分轨输出：vocals / instrumental（2 轨）、drums/bass/other/vocals（4 轨） | ✅ | ✅ 2 轨：`vocals.wav` / `instrumental.wav`（+ 16 kHz `vocals16k.wav` 供 whisper） | 4 轨未接 |
 | segment / window 大小（显存不够时的救命参数） | ✅ | ⚠️ `SeparateOptions.SegmentSecs` 只做参数占位，切割由 `audio-separator` 内部决定 | 未暴露 |
 | Ensemble（多模型加权融合） | ✅ | ❌ | 缺 |
@@ -89,6 +89,10 @@
 > 实测（2026-11-26，E5-2696 v3 18C/36T，CPU）：30 min 素材分离 **18 min 58 s**（RTF ≈0.63），
 > 峰值 RSS ≈5.1 GB，不占显存。该时间是"每 15 s 一段 + 2 s 交叉淡化"的整段 CPU 推理，
 > 换桌面 8 核会明显变慢；这是**必选前置**（ADR-037），不是可选项。
+>
+> 同一素材在 RTX 3060 上用 CUDA 12 onnxruntime（`onnxruntime-gpu 1.21.1`）重跑：**3 min 51 s**
+> （231 s，RTF ≈0.13，**4.9×**），`nvidia-smi` 显存 2372 → 4617 MiB。120 s 短素材对照：
+> CPU 76.3 s / CUDA 25.1 s（3.0×，短素材的启动开销占比更高）。
 
 ### 2.2 Buzz（批量转写工作流）
 

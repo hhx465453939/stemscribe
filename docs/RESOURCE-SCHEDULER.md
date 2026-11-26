@@ -109,7 +109,10 @@ separator: 大 MDX 模型 → 小 MDX 模型（仍失败则报错；**不存在�
 >
 > 分离实测（2026-11-26，E5-2696 v3 18C/36T，CPU onnxruntime）：`Kim Vocal 2` 30 s 音频
 > 峰值 RSS **3022 MB**、**~15 s**（RTF ≈0.50）；30 min 整集峰值 RSS **≈5.1 GB**、
-> **18 min 58 s**（RTF ≈0.63）。它不占显存，`vram_estimate_mb` 记 0。
+> **18 min 58 s**（RTF ≈0.63）。
+> 装 CUDA 运行时后同一 30 min 素材 **3 min 51 s**（231 s，RTF ≈0.13，4.9×），显存峰值
+> **4617 MiB**（空闲基线 2372 MiB，即模型+工作区约 **2.3 GB**）；CPU 版仍不占显存。
+> `vram_estimate_mb` 记 2300。
 > onnxruntime 按核数开线程，限制并发时要同时限制它的线程数，否则 5 GB 级 RSS 会挤占转写。
 
 ## 6. 内存（RAM）策略

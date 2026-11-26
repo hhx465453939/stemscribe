@@ -25,10 +25,14 @@ type Capabilities struct {
 	// VRAMTotalMB is measured, not asserted: the sidebar used to print a hardcoded
 	// "GPU 8.1 / 12 GB" from the dictionary, which disagreed with the same screen's
 	// own backend line. 0 means "not measured" and the UI shows a dash.
-	VRAMTotalMB       int               `json:"vram_total_mb"`
-	VRAMFreeMB        int               `json:"vram_free_mb"`
-	Separation        bool              `json:"separation"`
-	SeparationReason  string            `json:"separation_reason"`
+	VRAMTotalMB      int    `json:"vram_total_mb"`
+	VRAMFreeMB       int    `json:"vram_free_mb"`
+	Separation       bool   `json:"separation"`
+	SeparationReason string `json:"separation_reason"`
+	// SeparationBackend is the device recorded when the Python stack was installed:
+	// "cuda12" or "cpu". The user complaint that started CHG-0017 was a separation
+	// running on the CPU while the GPU sat idle, and nothing in the UI said so.
+	SeparationBackend string            `json:"separation_backend,omitempty"`
 	Polish            bool              `json:"polish"`
 	PolishReason      string            `json:"polish_reason"`
 	UnavailableParams map[string]string `json:"unavailable_params"`
@@ -53,6 +57,9 @@ func CapabilitiesNow(workdir string) (Capabilities, error) {
 	// the Python runtime and the UVR5 weights. The old reason claimed separation was
 	// unimplemented, which was a lie the user could see through in one click.
 	c.Separation, c.SeparationReason = separationStatus(workdir)
+	var suffix string
+	c.SeparationBackend, suffix = separationBackendStatus(c.Separation, engine.ReadSeparatorRuntime(workdir))
+	c.SeparationReason += suffix
 
 	// Voice activity detection needs a dedicated VAD model file, which the registry
 	// does not ship. Offering the switch anyway is how a run ends in an opaque
@@ -82,6 +89,29 @@ func CapabilitiesNow(workdir string) (Capabilities, error) {
 // separationStatus reports whether the mandatory UVR5 stage can actually run.
 // Both halves are required: the Python environment and the weights. Naming only
 // one would send the user to install something they already have.
+// separationBackendStatus turns the install record into the device name shown in
+// capabilities. The suffix is appended to the separation reason so a CPU-only
+// install says so out loud instead of leaving the UI to guess.
+//
+// An install without an accel record predates CHG-0017 and was CPU-only; if
+// separation is not usable at all, no device is reported.
+func separationBackendStatus(separation bool, info engine.SeparatorRuntimeInfo) (string, string) {
+	if info.Accel != "" {
+		if info.Accel != "cuda12" {
+			suffix := " · CPU only"
+			if info.Reason != "" {
+				suffix += " (" + info.Reason + ")"
+			}
+			return info.Accel, suffix
+		}
+		return info.Accel, " · CUDA"
+	}
+	if separation {
+		return "cpu", " · CPU only"
+	}
+	return "", ""
+}
+
 func separationStatus(workdir string) (bool, string) {
 	settings, _, err := LoadSettings(workdir)
 	if err != nil {

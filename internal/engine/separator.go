@@ -95,6 +95,32 @@ func SeparatorVersion(workdir string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// SeparatorRuntimeInfo is the acceleration record written at install time.
+//
+// The installer probes onnxruntime once and stores what it found; the run path
+// re-reads it so the requested device and its recorded availability cannot drift
+// apart. An install made before the field existed reads as empty -- which means
+// "CPU-only", the truth for those environments.
+type SeparatorRuntimeInfo struct {
+	Accel     string   `json:"accel"`
+	Providers []string `json:"providers"`
+	Reason    string   `json:"accel_reason"`
+}
+
+// ReadSeparatorRuntime returns the acceleration record, or a zero value when the
+// runtime is missing or was installed by an older build.
+func ReadSeparatorRuntime(workdir string) SeparatorRuntimeInfo {
+	raw, err := os.ReadFile(filepath.Join(separatorDir(workdir), "INSTALLED.json"))
+	if err != nil {
+		return SeparatorRuntimeInfo{}
+	}
+	var info SeparatorRuntimeInfo
+	if json.Unmarshal(raw, &info) != nil {
+		return SeparatorRuntimeInfo{}
+	}
+	return info
+}
+
 // EnsureSeparatorAssets writes the helper script and the pinned UVR metadata into
 // the runtime directory and returns their paths.
 //
@@ -153,7 +179,18 @@ type Separator struct {
 	ModelFile string // weight filename, e.g. Kim_Vocal_2.onnx
 	FFmpegExe string
 	Version   string // audio-separator version, recorded in provenance
-	Log       *os.File
+	// Accel is the execution device requested from the Python stack: "cuda12",
+	// "cpu", or "" for whatever the environment supports. It is requested, not
+	// assumed -- LastBackend carries what actually happened.
+	Accel string
+	Log   *os.File
+
+	// LastBackend / LastBackendReason / LastProviders describe the most recent
+	// separation. Provenance records Backend: hardcoding "cpu" in the bundle
+	// metadata meant a GPU run and a CPU run were indistinguishable afterwards.
+	LastBackend       string
+	LastBackendReason string
+	LastProviders     []string
 
 	exec execWithEnvFunc
 }
@@ -221,8 +258,11 @@ func runWithEnv(ctx context.Context, exe string, args, env []string, onLine func
 }
 
 type separatorResult struct {
-	Vocals       string `json:"vocals"`
-	Instrumental string `json:"instrumental"`
+	Vocals       string   `json:"vocals"`
+	Instrumental string   `json:"instrumental"`
+	Backend      string   `json:"backend"`
+	Providers    []string `json:"providers"`
+	Reason       string   `json:"reason"`
 }
 
 // Separate runs UVR5 separation, then derives the 16 kHz mono vocal track that
@@ -253,6 +293,9 @@ func (s *Separator) Separate(ctx context.Context, inPath, vocalsPath, instrument
 		"--model", s.ModelFile,
 		"--model-dir", s.ModelDir,
 		"--meta-dir", s.MetaDir,
+	}
+	if s.Accel != "" {
+		args = append(args, "--accel", s.Accel)
 	}
 	env := os.Environ()
 	env = append(env, "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
@@ -285,6 +328,25 @@ func (s *Separator) Separate(ctx context.Context, inPath, vocalsPath, instrument
 			if jErr := json.Unmarshal([]byte(line), &res); jErr == nil {
 				break
 			}
+		}
+	}
+
+	// Record what the helper actually did. The engine log line is the only place a
+	// user can afterwards answer "did this run use the GPU?", so it is written for
+	// every run, not only when something went wrong.
+	s.LastBackend = strings.TrimSpace(res.Backend)
+	s.LastProviders = res.Providers
+	s.LastBackendReason = strings.TrimSpace(res.Reason)
+	if s.LastBackend == "" {
+		s.LastBackend = "cpu"
+		s.LastBackendReason = "the separation helper did not report a backend"
+	}
+	if s.Log != nil {
+		_, _ = fmt.Fprintf(s.Log, "separate backend=%s providers=%v requested=%q\n",
+			s.LastBackend, s.LastProviders, s.Accel)
+		if s.Accel == "cuda12" && s.LastBackend != "cuda12" {
+			_, _ = fmt.Fprintf(s.Log, "WARN separation requested %s but ran on %s: %s\n",
+				s.Accel, s.LastBackend, s.LastBackendReason)
 		}
 	}
 	for label, p := range map[string]string{"vocals": vocalsPath, "instrumental": instrumentalPath} {

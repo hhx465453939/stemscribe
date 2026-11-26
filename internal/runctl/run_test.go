@@ -64,10 +64,12 @@ func TestNextSmallerInstalledWalksTheLadder(t *testing.T) {
 }
 
 // Provenance must not attribute the separator's stems to whisper.cpp: the two run
-// as different processes with different versions.
+// as different processes with different versions. The separation device is
+// recorded as reported, not hardcoded: a GPU run and a CPU fallback used to write
+// the same "cpu" here, which is how a CPU-bound separation stayed invisible.
 func TestBuildMetaKeepsEngineVersionsSeparate(t *testing.T) {
 	meta := BuildMeta("v1", "t", "C:\\in.mp4", "done",
-		"whisper.cpp", "1.9.5", "cuda12", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0",
+		"whisper.cpp", "1.9.5", "cuda12", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0", "cuda12",
 		engine.Defaults())
 	sep := meta.Provenance.Engines["separate"]
 	if sep.Version != "0.48.0" {
@@ -76,8 +78,8 @@ func TestBuildMetaKeepsEngineVersionsSeparate(t *testing.T) {
 	if sep.ModelID != "uvr-mdx-kim-vocal-2" {
 		t.Fatalf("separate model = %q", sep.ModelID)
 	}
-	if sep.Backend != "cpu" {
-		t.Fatalf("separate backend = %q want cpu (onnxruntime)", sep.Backend)
+	if sep.Backend != "cuda12" {
+		t.Fatalf("separate backend = %q want cuda12", sep.Backend)
 	}
 	tr := meta.Provenance.Engines["transcribe"]
 	if tr.Version != "1.9.5" {
@@ -88,11 +90,43 @@ func TestBuildMetaKeepsEngineVersionsSeparate(t *testing.T) {
 	}
 }
 
+// A separation that fell back to the CPU must be recorded as CPU even though CUDA
+// was requested; an unrun stage stays empty rather than claiming a device.
+func TestBuildMetaRecordsSeparationFallback(t *testing.T) {
+	meta := BuildMeta("v1", "t", "C:\\in.mp4", "done",
+		"whisper.cpp", "1.9.5", "cuda12", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0", "cpu",
+		engine.Defaults())
+	if got := meta.Provenance.Engines["separate"].Backend; got != "cpu" {
+		t.Fatalf("separate backend = %q want cpu", got)
+	}
+	meta = BuildMeta("v1", "t", "C:\\in.mp4", "failed",
+		"whisper.cpp", "1.9.5", "cuda12", "whisper-large-v3", "uvr-mdx-kim-vocal-2", "0.48.0", "",
+		engine.Defaults())
+	if got := meta.Provenance.Engines["separate"].Backend; got != "" {
+		t.Fatalf("unrun separation backend = %q want empty", got)
+	}
+}
+
 func TestSeparationEnabledOnlyExemptsSynthetic(t *testing.T) {
 	cases := map[string]bool{"": true, "auto": true, "auto ": true, "synthetic": false, "SYNTHETIC": false}
 	for kind, want := range cases {
 		if got := separationEnabled(kind); got != want {
 			t.Errorf("separationEnabled(%q) = %v want %v", kind, got, want)
 		}
+	}
+}
+
+// The provenance backend must come from the separator's own report of the run,
+// not from what was requested or from a default.
+func TestSeparatorBackendReportsLastRun(t *testing.T) {
+	comp := &engine.Composite{Separator: &engine.Separator{LastBackend: "cuda12"}}
+	if got := separatorBackend(comp); got != "cuda12" {
+		t.Fatalf("separatorBackend = %q want cuda12", got)
+	}
+	if got := separatorBackend(&engine.Composite{}); got != "" {
+		t.Fatalf("separatorBackend without separator = %q want empty", got)
+	}
+	if got := separatorBackend(&engine.Whisper{}); got != "" {
+		t.Fatalf("separatorBackend on a whisper-only engine = %q want empty", got)
 	}
 }
