@@ -10,8 +10,9 @@
 
 ```
 前端 NewTask
-  ├─ 分离模型下拉 ← catalog.installed.filter(kind == "separator")
-  ├─ 音轨多选     ← 所选模型 registry.stems；vocals 锁定
+  ├─ 处理方式下拉 ← 已安装 separator 的 architecture 去重（demucs → mdx → vr → …）
+  ├─ 分离模型下拉 ← catalog.installed.filter(kind == "separator" 且 architecture 匹配)
+  ├─ 音轨多选     ← 所选模型 registry.stems；vocals 锁定；全选/仅人声快捷
   └─ POST /api/queue { separator, stems, model, ... }
         │
         ▼
@@ -68,7 +69,7 @@ meta.Provenance.Engines["separate"].stems ← os.Stat 过滤后的真实保留�
 
 | # | 判据 | 失败条件 |
 |---|---|---|
-| AC-01 | 新建任务页有「分离模型」下拉，选项来自 registry 已安装 separator，含 Demucs 家族 | 页面上没有该控件，或选项写死只有 UVR5 |
+| AC-01 | 新建任务页有「处理方式」下拉（按 architecture 去重，Demucs 显式在列）与族内「分离模型」下拉，选项来自 registry 已安装 separator | 页面上没有处理方式控件，或 Demucs 不在处理方式里，或选项写死只有 UVR5 |
 | AC-02 | 选项文本含架构 / 轨数 / 非商用标记 | 用户无法区分 MDX 与 Demucs |
 | AC-03 | 「输出音轨」多选随所选模型变化 | 切换模型后仍显示上一个模型的轨 |
 | AC-04 | vocals 恒保留且视觉为已勾选、不可取消 | 可取消 vocals，或暗色下显示为未勾选 |
@@ -86,3 +87,9 @@ meta.Provenance.Engines["separate"].stems ← os.Stat 过滤后的真实保留�
 - 已存在的旧 bundle 只有在**下一次以该输入路径运行且分离启用**时才会被清理；
   本 CHG 不做启动期全库扫描（扫描用户输出目录需单独的授权与取舍）。
 - `dropStaleAudio` 只删 wav；其他扩展名的残留不在本 CHG 范围。
+
+## 5. 修订记录
+
+| 日期 | 修订 | 原因 |
+|---|---|---|
+| 2026-11-27 | §1 数据流与 AC-01 由「单一分离模型下拉」改为「处理方式 → 分离模型」两段（外加音轨多选），对齐 UVR5 的 PROCESS METHOD → MODEL → STEM(S) 结构 | owner 验收 dist 时指出看不到 Demucs：旧 exe 未重建是直接原因，扁平下拉把模型族差异藏住是设计原因；同时补「全选 / 仅人声」快捷与双主题截图证据 |

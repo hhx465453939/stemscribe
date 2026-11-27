@@ -2,10 +2,10 @@
 
 | AC | 实现 | 测试 | 证据 |
 |---|---|---|---|
-| AC-01 | `frontend/app/components/NewTask.tsx`（`sepModels = catalog.installed.filter(kind === "separator")` 渲染「分离模型」下拉） | 前端类型检查；`contrast.py` 双主题对比 | `tmp/evidence/chg0019/M1-STAGE1-UI.md` 判据 1；`stage1-dark.png` / `stage1-light.png` |
-| AC-02 | 同一组件，选项文本拼 `display_name · architecture · N stems · 非商用`；数据来自 registry（ADR-019） | 无前端单测，靠页面实测 | `M1-STAGE1-UI.md` 判据 2（列出的四个选项原文） |
-| AC-03 | `NewTask.tsx` `changeSeparator()` 重置 `stems` 并按新模型 stems 重渲染 | 页面实测：UVR5 2 项 ↔ `demucs-htdemucs-6s` 6 项 | `M1-STAGE1-UI.md` 判据 3（切换与恢复记录） |
-| AC-04 | `span.stem-lock` + `--lamp-fill/--lamp-ink`（`frontend/app/globals.css`）；`aria-label` 用 `task.stem.locked` | 双主题截图核对 | `M1-STAGE1-UI.md` 判据 4/6；两张截图 |
+| AC-01 | `frontend/app/components/NewTask.tsx`：「处理方式」下拉（`methods` 按已安装 separator 的 `architecture` 去重排序）→「分离模型」下拉（`methodModels` 只列该族） | 前端类型检查；CDP 实测切换（demucs/mdx 两族、3 个 Demucs 模型） | `tmp/evidence/chg0019/M1-STAGE1-UI.md` 判据 1/2；`03-stage1-demucs.png` |
+| AC-02 | 同一组件，选项文本拼 `display_name · architecture · N stems · N 轨 · 非商用`；数据来自 registry（ADR-019） | 无前端单测，靠页面实测 | `M1-STAGE1-UI.md` 判据 2（三个 Demucs 选项原文） |
+| AC-03 | `NewTask.tsx` `changeMethod()` 重置 `separator` 与 `stems` 为新族首个模型的声明；`changeSeparator()` 同理 | CDP 实测：切 Demucs → 4 项音轨；切 `htdemucs_6s` → 6 项（含吉他/钢琴） | `M1-STAGE1-UI.md` 判据 3；`04-stage1-demucs-6s.png` |
+| AC-04 | `span.stem-lock` + `--lamp-fill/--lamp-ink`（`frontend/app/globals.css`）；`aria-label` 用 `task.stem.locked` | 双主题截图核对 | `M1-STAGE1-UI.md` 判据 4/6；`03/04`（明亮）与 `05*`（暗色） |
 | AC-05 | `internal/pipeline/pipeline.go` `pruneStems()`；`stems` 事件 `kept=/dropped=` | `pipeline_test.go` `TestSeparateDropsUnselectedStems` | `e2e-stems.log`：`kept=vocals dropped=bass,drums,guitar,other,piano` |
 | AC-06 | `internal/runctl/run.go` `separationHash(..., keep)`；`stageParams["separate"]` 使用该哈希 | `run_test.go` `TestSeparationHashTracksRetainedStems` | `e2e-stems.log`：`resume: separate: parameters changed` |
 | AC-07 | `recordSeparateRuntime()`：候选集 → `os.Stat` → 排序写 `meta.provenance.engines.separate.stems` | 由真实运行核对 meta | `local-570254dd1e1af6d9/meta.json` 的 `stems: ["vocals"]` |

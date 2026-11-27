@@ -62,6 +62,15 @@ const STEM_KEYS: Record<string, Key> = {
   piano: "task.stem.piano",
 };
 
+/** Separator architecture -> dictionary key. Unknown ones render verbatim. */
+const METHOD_KEYS: Record<string, Key> = {
+  demucs: "task.method.demucs",
+  mdx: "task.method.mdx",
+  vr: "task.method.vr",
+  mdxc: "task.method.mdxc",
+  roformer: "task.method.roformer",
+};
+
 /** Reads the parameter page's storage and layers it over the run baseline. */
 function readParams(): Record<string, string> {
   let user: Record<string, string> = {};
@@ -102,6 +111,11 @@ export function NewTask() {
   // produces are kept. Both are per-run choices, sent with the queue request, so a
   // one-off Demucs run does not need the Models page first.
   const [separator, setSeparator] = useState("");
+  // Stage 1 mirrors the mental model of the desktop separators people already
+  // know: first the process method (Demucs / MDX-Net / VR ...), then the model
+  // inside that method, then the stems to keep. A flat list of every installed
+  // model hid the difference between families.
+  const [method, setMethod] = useState("");
   const [sepModels, setSepModels] = useState<CatalogItemView[]>([]);
   const [stems, setStems] = useState<string[]>([]);
   const [have, setHave] = useState<string[]>([]);
@@ -143,6 +157,10 @@ export function NewTask() {
       // user can uncheck the ones that cost disk without ever wanting them.
       const chosen = seps.find((m) => m.id === configured);
       if (chosen?.stems && chosen.stems.length > 0) setStems(chosen.stems);
+      // Keep the method selector in step with the configured model; when the
+      // configured id is not installed, leave it blank so every method stays
+      // reachable instead of showing a family with no selectable model.
+      if (chosen?.architecture) setMethod(chosen.architecture);
     });
     // Language lives with the other engine parameters, so an explicit choice on the
     // parameter page survives a reload too.
@@ -177,6 +195,27 @@ export function NewTask() {
   // the checkboxes cannot offer a track the engine would never write. Stable in a
   // memo so the run callback does not see a new array on every render.
   const stemChoices = useMemo(() => selectedSep?.stems ?? [], [selectedSep]);
+
+  // Families present among the installed separators, in the order the desktop
+  // tools list them. Unknown architectures still appear, after the known ones.
+  const methods = useMemo(() => {
+    const order = ["demucs", "mdx", "vr", "mdxc", "roformer"];
+    const rank = (arch: string) => {
+      const i = order.indexOf(arch);
+      return i < 0 ? order.length : i;
+    };
+    const seen: string[] = [];
+    for (const m of sepModels) {
+      const arch = m.architecture ?? "";
+      if (arch !== "" && !seen.includes(arch)) seen.push(arch);
+    }
+    return seen.sort((a, b) => rank(a) - rank(b));
+  }, [sepModels]);
+
+  const methodModels = useMemo(
+    () => (method === "" ? sepModels : sepModels.filter((m) => (m.architecture ?? "") === method)),
+    [sepModels, method],
+  );
 
   useEffect(() => {
     if (!active) {
@@ -377,6 +416,18 @@ export function NewTask() {
     [sepModels],
   );
 
+  const changeMethod = useCallback(
+    (arch: string) => {
+      setMethod(arch);
+      // A method with no model would leave the run pointed at the previous
+      // family; pick its first installed model, or clear the selection.
+      const first = sepModels.find((m) => (m.architecture ?? "") === arch);
+      setSeparator(first?.id ?? "");
+      setStems(first?.stems ?? []);
+    },
+    [sepModels],
+  );
+
   const toggleStem = useCallback((stem: string) => {
     // vocals is what the transcript is made from; refusing the uncheck is kinder
     // than letting the run fail after separation.
@@ -539,6 +590,25 @@ export function NewTask() {
         >
           <label className="row" style={{ gap: "var(--sp-2)" }}>
             <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t("task.method")}
+            </span>
+            <select
+              className="input"
+              value={method}
+              onChange={(e) => changeMethod(e.target.value)}
+              aria-label={t("task.method")}
+            >
+              {methods.map((arch) => (
+                <option key={arch} value={arch}>
+                  {METHOD_KEYS[arch] ? t(METHOD_KEYS[arch]) : arch}
+                </option>
+              ))}
+              {method === "" ? <option value="">—</option> : null}
+            </select>
+          </label>
+
+          <label className="row" style={{ gap: "var(--sp-2)" }}>
+            <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
               {t("task.separator")}
             </span>
             <select
@@ -548,11 +618,10 @@ export function NewTask() {
               aria-label={t("task.separator")}
             >
               <option value="">—</option>
-              {sepModels.map((m) => (
+              {methodModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {[
                     m.name || m.id,
-                    m.architecture,
                     m.stems && m.stems.length > 0
                       ? t("models.stems").replace("{n}", String(m.stems.length))
                       : "",
@@ -562,18 +631,40 @@ export function NewTask() {
                     .join(" · ")}
                 </option>
               ))}
-              {separator !== "" && !sepModels.some((m) => m.id === separator) ? (
+              {separator !== "" && !methodModels.some((m) => m.id === separator) ? (
                 <option value={separator}>{`${separator} · ${t("task.modelMissing")}`}</option>
               ) : null}
             </select>
           </label>
 
           {stemChoices.length > 0 ? (
-            <div className="row" style={{ gap: "var(--sp-3)", flexWrap: "wrap" }}>
+            <div className="row" style={{ gap: "var(--sp-2)" }}>
               <span className="mono muted" style={{ whiteSpace: "nowrap" }}>
                 {t("task.stems")}
               </span>
-              {stemChoices.map((stem) => {
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setStems(stemChoices)}
+                title={t("task.stemsAllHint")}
+              >
+                {t("task.stemsAll")}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setStems(["vocals"])}
+                title={t("task.stemsVocalsHint")}
+              >
+                {t("task.stemsVocalsOnly")}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {stemChoices.length > 0 ? (
+          <div className="row" style={{ gap: "var(--sp-3)", flexWrap: "wrap" }}>
+            {stemChoices.map((stem) => {
                 const locked = stem === "vocals";
                 return (
                   <label
@@ -605,7 +696,6 @@ export function NewTask() {
               })}
             </div>
           ) : null}
-        </div>
 
         <p className="mono muted" style={{ margin: 0 }}>
           {t("task.stemsHint")}

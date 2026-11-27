@@ -17,6 +17,8 @@ separator，含 Demucs 全家族）、输出音轨多选（跟随模型声明、
 | 2026-11-27 | in_progress | 真实端到端（Demucs 6s → 只留 vocals）暴露旧 UVR5 的 `instrumental.wav` 残留，登记为缺陷 | agent |
 | 2026-11-27 | in_progress | 新增 `dropStaleAudio`：分离启用时清理非 live wav（保护派生文件、未知模型不删）；单测 + 真实 resume-skip 运行验证 | agent |
 | 2026-11-27 | in_progress | 补齐 PRD/SPEC/TRACEABILITY 与 E2E 证据；待 Checkfix 与提交授权 | agent |
+| 2026-11-27 | in_progress | owner 反馈 dist 仍看不到 Demucs：定位为旧 exe（11-26 构建）＋扁平下拉掩盖模型族；按 UVR5 心智模型重构为「处理方式 → 分离模型 → 输出音轨」三段式 | agent |
+| 2026-11-27 | in_progress | `scripts/build.ps1` 重出 dist（19:07）；CDP 实测 Demucs 三模型、4/6 轨随模型变化、双主题截图留证 | agent |
 
 ## 设计决定
 
@@ -32,10 +34,10 @@ separator，含 Demucs 全家族）、输出音轨多选（跟随模型声明、
 
 | 文件 | 改动 |
 |---|---|
-| `frontend/app/components/NewTask.tsx` | 分离模型下拉、音轨多选、`changeSeparator` 重置、提交 `separator`/`stems` |
+| `frontend/app/components/NewTask.tsx` | 「处理方式」下拉（按 architecture 去重）、族内「分离模型」下拉、音轨多选 + 全选/仅人声、`changeMethod` 重置、提交 `separator`/`stems` |
 | `frontend/app/globals.css` | `.stem-lock` 实心琥珀勾 |
 | `frontend/lib/api.ts` | `enqueue()` 增加 `separator`、`stems`；`SettingsView.separator` |
-| `frontend/lib/i18n.ts` | `task.separator`、`task.stems`、`task.stemsHint`、`task.stem.*`、`task.stem.locked`；`task.model` 改「转写模型」 |
+| `frontend/lib/i18n.ts` | `task.method.*`（demucs/mdx/vr/mdxc/roformer）、`task.stemsAll*`、`task.stemsVocalsOnly*`、`task.separator`、`task.stems`、`task.stem.*`；`task.model` 改「转写模型」 |
 | `internal/webapi/handler.go` | `/api/queue` 接收 `separator`、`stems` |
 | `internal/runctl/run.go` | `Options.ExportStems`、`normalizeStems` 预校验、hash 含 keep、`recordSeparateRuntime` 按 stat 记录、新增 `dropStaleAudio` |
 | `internal/pipeline/pipeline.go` | `SeparateOptions.Keep`、`pruneStems`、`stems` 事件 |
