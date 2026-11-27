@@ -66,6 +66,11 @@ type SeparateOptions struct {
 	// Stems is the set the configured model must produce, from the registry. A
 	// missing stem is a failed separation, never a quietly shorter result.
 	Stems []string
+	// Keep selects which produced stems are retained on disk. Empty means "keep
+	// everything". The model always computes every track (audio-separator has no
+	// single-stem mode), so this is a disk decision: unselected stems are removed
+	// after they were written, before the checkpoint lists the outputs.
+	Keep []string
 }
 
 // Engine is the out-of-process inference port.
@@ -190,6 +195,17 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 			sepStems, stageErr = r.Engine.Separate(ctx, full, audioDir, req.SeparateOpts)
 			if stageErr == nil {
 				stageErr = requireStems(sepStems, req.SeparateOpts.Stems)
+			}
+			if stageErr == nil && len(req.SeparateOpts.Keep) > 0 {
+				var dropped []string
+				sepStems, dropped, stageErr = pruneStems(sepStems, req.SeparateOpts.Keep)
+				if stageErr == nil && len(dropped) > 0 {
+					// Auditable: the bundle says which stems it kept, and the run log
+					// records what was thrown away instead of leaving the user to guess.
+					emit(Event{Kind: "stems", Stage: string(stage),
+						Note: "kept=" + strings.Join(sortedKeys(sepStems), ",") +
+							" dropped=" + strings.Join(dropped, ",")})
+				}
 			}
 		case store.StageTranscribe:
 			// Transcribe the 16 kHz copy of the separated vocals. Falling back to the
@@ -446,6 +462,45 @@ func requireStems(got map[string]string, want []string) error {
 		return fmt.Errorf("separation did not produce required stem(s): %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// pruneStems removes every produced stem that is not in keep and returns the
+// retained map plus the sorted names that were dropped.
+//
+// Separation always computes all tracks; there is no single-stem mode upstream.
+// Deleting afterwards is therefore a disk decision, and it has to happen before
+// the checkpoint records outputs, or the next plan would look for files this run
+// deliberately removed.
+func pruneStems(stems map[string]string, keep []string) (map[string]string, []string, error) {
+	wanted := make(map[string]bool, len(keep))
+	for _, name := range keep {
+		wanted[name] = true
+	}
+	kept := make(map[string]string, len(stems))
+	var dropped []string
+	for name, path := range stems {
+		if wanted[name] {
+			kept[name] = path
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("drop stem %q: %w", name, err)
+		}
+		dropped = append(dropped, name)
+	}
+	sort.Strings(dropped)
+	return kept, dropped, nil
+}
+
+// sortedKeys returns the map's keys in a stable order, for log lines that must
+// not change between identical runs.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // separateOutputs lists the bundle-relative files a separation actually wrote.

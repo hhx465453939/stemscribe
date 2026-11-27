@@ -422,6 +422,29 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+/* The one always-kept stem (vocals). It is not a control, so it must not look
+   like an unchecked box: a disabled checkbox greys out in the dark theme. */
+.stem-lock {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--lamp-fill);
+  flex-shrink: 0;
+}
+
+.stem-lock::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--lamp-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 .mono {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);

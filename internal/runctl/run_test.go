@@ -4,10 +4,51 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hhx465453939/stemscribe/internal/engine"
+	"github.com/hhx465453939/stemscribe/internal/registry"
+	"github.com/hhx465453939/stemscribe/internal/store"
 )
+
+// The retention set is decided before the run starts: a set the model cannot
+// produce (or one without vocals) must be refused at the door, not after a
+// multi-minute separation.
+func TestNormalizeStems(t *testing.T) {
+	m := registry.Model{ID: "demucs-x", Stems: []string{"vocals", "drums", "bass", "other"}}
+
+	got, err := normalizeStems([]string{" bass ", "vocals", "bass"}, m)
+	if err != nil {
+		t.Fatalf("valid set rejected: %v", err)
+	}
+	if strings.Join(got, ",") != "bass,vocals" {
+		t.Errorf("normalizeStems = %v, want sorted and de-duplicated", got)
+	}
+
+	if _, err := normalizeStems([]string{"drums"}, m); err == nil || !strings.Contains(err.Error(), "vocals") {
+		t.Errorf("a set without vocals must be refused, got %v", err)
+	}
+
+	_, err = normalizeStems([]string{"vocals", "guitar"}, m)
+	if err == nil || !strings.Contains(err.Error(), "guitar") || !strings.Contains(err.Error(), "vocals") {
+		t.Errorf("unknown stem must be refused with the available list, got %v", err)
+	}
+}
+
+// Unchecking a stem and resuming has to re-run separation; otherwise the
+// checkpoint keeps claiming the old output is valid and nothing happens.
+func TestSeparationHashTracksRetainedStems(t *testing.T) {
+	all := separationHash("m", SeparateTuning{}, nil)
+	vocals := separationHash("m", SeparateTuning{}, []string{"vocals"})
+	two := separationHash("m", SeparateTuning{}, []string{"vocals", "drums"})
+	if all == vocals || vocals == two || all == two {
+		t.Fatalf("hash ignored the retained set: all=%s vocals=%s two=%s", all, vocals, two)
+	}
+	if two != separationHash("m", SeparateTuning{}, []string{"drums", "vocals"}) {
+		t.Error("hash must not depend on the order the caller listed the stems")
+	}
+}
 
 func TestIsAllocationFailure(t *testing.T) {
 	yes := []string{
@@ -104,6 +145,56 @@ func TestBuildMetaRecordsSeparationFallback(t *testing.T) {
 		engine.Defaults())
 	if got := meta.Provenance.Engines["separate"].Backend; got != "" {
 		t.Fatalf("unrun separation backend = %q want empty", got)
+	}
+}
+
+// A bundle reused across model changes must not keep stems from the previous
+// model: the UI says unselected stems are deleted, and switching separators is
+// the ordinary way to end up with an orphan such as UVR5's instrumental.wav.
+func TestDropStaleAudioRemovesPreviousModelStems(t *testing.T) {
+	root := t.TempDir()
+	bundle, err := store.New(root)
+	if err != nil {
+		t.Fatalf("new bundle: %v", err)
+	}
+	audio := filepath.Join(root, "audio")
+	if err := os.MkdirAll(audio, 0o755); err != nil {
+		t.Fatalf("mkdir audio: %v", err)
+	}
+	names := []string{"full.wav", "16k.wav", "vocals16k.wav", "vocals.wav", "instrumental.wav"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(audio, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	removed, err := dropStaleAudio(bundle, []string{"vocals"}, "")
+	if err != nil {
+		t.Fatalf("dropStaleAudio: %v", err)
+	}
+	if strings.Join(removed, ",") != "instrumental" {
+		t.Fatalf("removed = %v, want [instrumental]", removed)
+	}
+	for _, keep := range []string{"full.wav", "16k.wav", "vocals16k.wav", "vocals.wav"} {
+		if _, statErr := os.Stat(filepath.Join(audio, keep)); statErr != nil {
+			t.Errorf("%s must survive the sweep: %v", keep, statErr)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(audio, "instrumental.wav")); !os.IsNotExist(statErr) {
+		t.Errorf("instrumental.wav should be gone, stat = %v", statErr)
+	}
+
+	// An unrecognised model with an empty keep set says nothing about which
+	// stems are live, so the sweep must refuse to act instead of deleting all.
+	if err := os.WriteFile(filepath.Join(audio, "instrumental.wav"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("restore instrumental: %v", err)
+	}
+	removed, err = dropStaleAudio(bundle, nil, "no-such-model")
+	if err != nil {
+		t.Fatalf("unknown model sweep: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("unknown model removed %v, want nothing", removed)
 	}
 }
 

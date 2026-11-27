@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,11 @@ type Options struct {
 	// each architecture's upstream default, which is what a caller with no
 	// opinion should get.
 	SepTuning SeparateTuning
+	// ExportStems names the stems to keep after separation. Empty means "keep
+	// everything the model produces". vocals is mandatory -- transcription reads
+	// it -- and every name must belong to the selected model; anything else is
+	// rejected before the run starts rather than silently ignored.
+	ExportStems []string
 	// OutputDir overrides Settings.OutputDir for this run only. Empty means "use the
 	// configured default", which itself falls back to workdir/libraries.
 	OutputDir string
@@ -301,6 +307,13 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 		if err := o.SepTuning.Validate(m); err != nil {
 			return out, err
 		}
+		if len(o.ExportStems) > 0 {
+			keep, kerr := normalizeStems(o.ExportStems, m)
+			if kerr != nil {
+				return out, kerr
+			}
+			o.ExportStems = keep
+		}
 	}
 	engName, engVersion := "synthetic", Version
 	eng, engDesc, engErr := BuildEngine(kind, layout.Root, modelID, sepModelID,
@@ -343,7 +356,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	// model option look like it did nothing.
 	stageParams := map[string]string{
 		"transcribe": transcribeHash + ";model=" + modelID,
-		"separate":   separationHash(sepModelID, o.SepTuning),
+		"separate":   separationHash(sepModelID, o.SepTuning, o.ExportStems),
 	}
 
 	// Plan only after every `disabled` decision is final, or the plan resumes at a
@@ -373,6 +386,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 			Shifts: o.SepTuning.Shifts, BatchSize: o.SepTuning.BatchSize,
 			HalfPrecision: o.SepTuning.FP16,
 			Stems:         separatorStems(sepModelID),
+			Keep:          o.ExportStems,
 		},
 	})
 	if err != nil {
@@ -384,7 +398,7 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 			status, stageState = "canceled", "canceled"
 		}
 		meta := BuildMeta(videoID, o.Title, absInput, status, engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
-		recordSeparateRuntime(&meta, eng)
+		recordSeparateRuntime(&meta, eng, bundle, o.ExportStems)
 		meta.Stages[string(result.FailedAt)] = store.StageRun{State: stageState, Message: err.Error()}
 		_ = bundle.WriteMeta(meta)
 		return out, fmt.Errorf("failed at %s: %w", result.FailedAt, err)
@@ -394,12 +408,29 @@ func runOnce(ctx context.Context, o Options) (Outcome, error) {
 	if err != nil {
 		return out, fmt.Errorf("read transcript: %w", err)
 	}
+	// Separation succeeded; audio/ now holds this run's stems. Anything else with
+	// a .wav name is a leftover from an earlier model choice (switching UVR5 ->
+	// Demucs left instrumental.wav behind). The UI promises unselected stems are
+	// gone, so an orphan from a previous run must not survive either. Sweep when
+	// separation is enabled at all: a stage skipped as "already valid" still owns
+	// a well-defined live set, while a run with separation disabled must not
+	// delete files as a side effect of not separating.
+	if separate {
+		stale, err := dropStaleAudio(bundle, o.ExportStems, sepModelID)
+		if err != nil {
+			return out, fmt.Errorf("drop stale audio: %w", err)
+		}
+		if len(stale) > 0 {
+			emitLogged(pipeline.Event{Kind: "stems", Stage: string(store.StageSeparate),
+				Note: "removed stale=" + strings.Join(stale, ",")})
+		}
+	}
 	if err = WriteArtifacts(bundle, o.Title, segs); err != nil {
 		return out, fmt.Errorf("export: %w", err)
 	}
 
 	meta := BuildMeta(videoID, o.Title, absInput, "done", engName, engVersion, backendName, modelID, sepModelID, sepVersion, separatorBackend(eng), params)
-	recordSeparateRuntime(&meta, eng)
+	recordSeparateRuntime(&meta, eng, bundle, o.ExportStems)
 	for _, s := range result.Completed {
 		meta.Stages[string(s)] = store.StageRun{State: "ok"}
 	}
@@ -553,6 +584,43 @@ func InputNeedsDemux(path string) bool {
 
 var _ = registry.BackendCPU
 
+// normalizeStems validates a requested retention set against the model's declared
+// output and returns it sorted and de-duplicated.
+//
+// vocals is required because transcription reads it; a set without vocals would
+// produce a bundle that cannot be transcribed, and failing after a multi-minute
+// separation is worse than refusing at the door.
+func normalizeStems(want []string, m registry.Model) ([]string, error) {
+	allowed := make(map[string]bool, len(m.Stems))
+	for _, s := range m.Stems {
+		allowed[s] = true
+	}
+	seen := make(map[string]bool, len(want))
+	out := make([]string, 0, len(want))
+	var unknown []string
+	for _, raw := range want {
+		s := strings.TrimSpace(raw)
+		if s == "" || seen[s] {
+			continue
+		}
+		if !allowed[s] {
+			unknown = append(unknown, s)
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("model %q has no stem(s) %s; available: %s",
+			m.ID, strings.Join(unknown, ", "), strings.Join(m.Stems, ", "))
+	}
+	if !seen["vocals"] {
+		return nil, fmt.Errorf("the stem set must include \"vocals\": transcription reads it")
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // separatorStems is the configured model's declared output set. An id the
 // catalog does not know yields nil, and the pipeline then requires only vocals.
 func separatorStems(modelID string) []string {
@@ -569,8 +637,15 @@ func separatorStems(modelID string) []string {
 // separationHash is the checkpoint key for the separate stage. It has to cover
 // every knob that changes the output: changing shifts or overlap while the model
 // id stays the same, then resuming, used to keep the stems produced with the old
-// values.
-func separationHash(modelID string, t SeparateTuning) string {
+// values. The retained-stem set belongs here too: unchecking drums and resuming
+// must re-run separation instead of being treated as "already done".
+func separationHash(modelID string, t SeparateTuning, keep []string) string {
+	kept := "all"
+	if len(keep) > 0 {
+		sorted := append([]string(nil), keep...)
+		sort.Strings(sorted)
+		kept = strings.Join(sorted, ",")
+	}
 	return store.HashParams(
 		"model="+modelID,
 		fmt.Sprintf("segment=%d", t.Segment),
@@ -578,12 +653,68 @@ func separationHash(modelID string, t SeparateTuning) string {
 		fmt.Sprintf("shifts=%d", t.Shifts),
 		fmt.Sprintf("batch=%d", t.BatchSize),
 		fmt.Sprintf("fp16=%v", t.FP16),
+		"keep="+kept,
 	)
 }
 
+// audioDerived names the wavs in audio/ that are not stems: the source copy,
+// its 16 kHz form, and the 16 kHz vocals copy transcription consumes. Stem
+// retention never applies to them, and stale sweeping must never touch them.
+var audioDerived = map[string]bool{"full.wav": true, "16k.wav": true, "vocals16k.wav": true}
+
+// dropStaleAudio removes stem files left behind by an earlier separation when
+// the current settings produce a different set. pruneStems only sees the stems
+// this run produced, so a bundle reused across model changes kept orphans such
+// as instrumental.wav from an old UVR5 run while the UI claimed they were gone.
+//
+// The sweep is deliberately conservative: it acts only on *.wav directly under
+// audio/, never when the live stem set is unknown (an unrecognised model must
+// not turn "keep nothing" into "delete everything"), and never on derived files.
+func dropStaleAudio(bundle *store.Bundle, keep []string, sepModelID string) ([]string, error) {
+	dir, err := bundle.Path("audio")
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	live := make(map[string]bool, len(keep)+len(audioDerived))
+	for _, stem := range keep {
+		live[stem+".wav"] = true
+	}
+	if len(keep) == 0 {
+		for _, stem := range separatorStems(sepModelID) {
+			live[stem+".wav"] = true
+		}
+	}
+	if len(live) == 0 {
+		return nil, nil
+	}
+	var removed []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".wav") || live[name] || audioDerived[name] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("remove %q: %w", name, err)
+		}
+		removed = append(removed, strings.TrimSuffix(name, ".wav"))
+	}
+	sort.Strings(removed)
+	return removed, nil
+}
+
 // recordSeparateRuntime adds the facts only the engine knows after a run: the
-// inference stack and the stem files that really exist on disk.
-func recordSeparateRuntime(meta *store.Meta, eng pipeline.Engine) {
+// inference stack and the stem files that really exist on disk. Candidates are the
+// retained set (or the model's full declaration when nothing was pruned), then
+// filtered by os.Stat -- a run that failed mid-separation must not claim stems it
+// never wrote.
+func recordSeparateRuntime(meta *store.Meta, eng pipeline.Engine, bundle *store.Bundle, kept []string) {
 	c, ok := eng.(*engine.Composite)
 	if !ok || c.Separator == nil {
 		return
@@ -593,6 +724,21 @@ func recordSeparateRuntime(meta *store.Meta, eng pipeline.Engine) {
 		return
 	}
 	info.Runtime = c.Separator.LastRuntime
-	info.Stems = separatorStems(info.ModelID)
+	candidates := kept
+	if len(candidates) == 0 {
+		candidates = separatorStems(info.ModelID)
+	}
+	present := make([]string, 0, len(candidates))
+	for _, stem := range candidates {
+		path, err := bundle.Path("audio/" + stem + ".wav")
+		if err != nil {
+			continue
+		}
+		if _, statErr := os.Stat(path); statErr == nil {
+			present = append(present, stem)
+		}
+	}
+	sort.Strings(present)
+	info.Stems = present
 	meta.Provenance.Engines["separate"] = info
 }

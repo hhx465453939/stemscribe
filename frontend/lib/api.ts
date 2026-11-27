@@ -208,7 +208,15 @@ export interface QueueView {
  * why (e.g. a .txt is refused at the door rather than failing three stages later). */
 export async function enqueue(
   inputs: string[],
-  opts: { outputDir?: string; model?: string; params?: Record<string, string> } = {},
+  opts: {
+    outputDir?: string;
+    model?: string;
+    /** Stage-1 separation model; empty keeps the configured default. */
+    separator?: string;
+    /** Stems to keep after separation; empty keeps everything the model produces. */
+    stems?: string[];
+    params?: Record<string, string>;
+  } = {},
 ): Promise<{ added?: number; rejected?: string[]; error?: string }> {
   try {
     const res = await fetch("/api/queue", {
@@ -218,6 +226,8 @@ export async function enqueue(
         inputs,
         output_dir: opts.outputDir ?? "",
         model: opts.model ?? "",
+        separator: opts.separator ?? "",
+        stems: opts.stems ?? [],
         params: opts.params ?? {},
       }),
     });

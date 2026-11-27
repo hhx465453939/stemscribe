@@ -133,6 +133,48 @@ func TestRunSeparatesWhenEnabled(t *testing.T) {
 	}
 }
 
+// A 4-stem model always computes every track; the retention choice decides what
+// stays on disk. Unchecked stems must be gone before the checkpoint lists outputs,
+// otherwise the next plan waits forever for files this run deleted on purpose.
+func TestSeparateDropsUnselectedStems(t *testing.T) {
+	b := newBundle(t)
+	full, _ := b.Path("audio/full.wav")
+	if err := os.WriteFile(full, []byte("RIFF...."), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	eng := &fakeEngine{segments: []Segment{{StartMS: 0, EndMS: 1000, Text: "x。", Confidence: 0.9}}}
+	var notes []string
+	r := &Runner{Engine: eng, Emit: func(e Event) {
+		if e.Kind == "stems" {
+			notes = append(notes, e.Note)
+		}
+	}}
+	all := []string{"vocals", "instrumental", "drums", "bass"}
+	if _, err := r.Run(context.Background(), Request{
+		Bundle: b, VideoID: "t", Separate: true,
+		SeparateOpts: SeparateOptions{Stems: all, Keep: []string{"vocals"}},
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for _, stem := range []string{"instrumental", "drums", "bass"} {
+		p, _ := b.Path("audio/" + stem + ".wav")
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s.wav still on disk (err=%v); the user asked to keep vocals only", stem, err)
+		}
+	}
+	kept, _ := b.Path("audio/vocals.wav")
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("vocals.wav must survive: %v", err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("emitted %d stem notes, want 1 (deletions must be auditable): %v", len(notes), notes)
+	}
+	if !strings.Contains(notes[0], "kept=vocals") || !strings.Contains(notes[0], "dropped=bass,drums,instrumental") {
+		t.Errorf("stem note = %q, want kept/dropped lists", notes[0])
+	}
+}
+
 func TestRunStopsOnEngineError(t *testing.T) {
 	b := newBundle(t)
 	eng := &fakeEngine{writeErr: context.DeadlineExceeded}

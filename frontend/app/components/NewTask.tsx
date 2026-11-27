@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrefs } from "./Providers";
 import {
   enqueue,
@@ -51,6 +51,17 @@ const STAGE_KEYS: Record<string, Key> = {
   export: "stage.exporting",
 };
 
+/** Stem name -> dictionary key. Unknown names render as themselves. */
+const STEM_KEYS: Record<string, Key> = {
+  vocals: "task.stem.vocals",
+  instrumental: "task.stem.instrumental",
+  drums: "task.stem.drums",
+  bass: "task.stem.bass",
+  other: "task.stem.other",
+  guitar: "task.stem.guitar",
+  piano: "task.stem.piano",
+};
+
 /** Reads the parameter page's storage and layers it over the run baseline. */
 function readParams(): Record<string, string> {
   let user: Record<string, string> = {};
@@ -87,13 +98,16 @@ export function NewTask() {
   const [manual, setManual] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [model, setModel] = useState("");
+  // Stage 1 is separation: which separator model runs, and which of the stems it
+  // produces are kept. Both are per-run choices, sent with the queue request, so a
+  // one-off Demucs run does not need the Models page first.
+  const [separator, setSeparator] = useState("");
+  const [sepModels, setSepModels] = useState<CatalogItemView[]>([]);
+  const [stems, setStems] = useState<string[]>([]);
+  const [have, setHave] = useState<string[]>([]);
   const [language, setLanguage] = useState("zh");
   const [workdir, setWorkdir] = useState("");
   const [installed, setInstalled] = useState<CatalogItemView[]>([]);
-  // Prerequisites the configured run needs but the disk does not have. Derived from
-  // the same catalog the Models page installs from, so the banner cannot claim
-  // readiness the backend would refuse a second later.
-  const [missing, setMissing] = useState<string[]>([]);
   const [items, setItems] = useState<QueueItemView[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -118,14 +132,17 @@ export function NewTask() {
       // Only installed models are selectable: offering an uninstalled one would fail
       // at run time, which is the trap the audit called out.
       setInstalled(c.installed.filter((m) => m.kind === "whisper"));
-      const have = new Set(c.installed.map((m) => m.id));
-      const gaps: string[] = [];
-      // Separation is mandatory (ADR-037): both the Python runtime and the UVR5
-      // weights are hard prerequisites, not conveniences.
-      if (!have.has("separator-python")) gaps.push("separator-python");
-      if (s?.separator && !have.has(s.separator)) gaps.push(s.separator);
-      if (s?.model && !have.has(s.model)) gaps.push(s.model);
-      setMissing(gaps);
+      // Stage-1 selectors come from the same catalog, so a model installed on the
+      // Models page shows up here without a reload of anything else.
+      const seps = c.installed.filter((m) => m.kind === "separator");
+      setSepModels(seps);
+      setHave(c.installed.map((m) => m.id));
+      const configured = s?.separator ?? "";
+      setSeparator(configured);
+      // The configured model's declared stems are the default retention set; the
+      // user can uncheck the ones that cost disk without ever wanting them.
+      const chosen = seps.find((m) => m.id === configured);
+      if (chosen?.stems && chosen.stems.length > 0) setStems(chosen.stems);
     });
     // Language lives with the other engine parameters, so an explicit choice on the
     // parameter page survives a reload too.
@@ -137,6 +154,29 @@ export function NewTask() {
       /* corrupt storage: keep the default */
     }
   }, [refresh]);
+
+  // Prerequisites the chosen run needs but the disk does not have. Computed from
+  // the live selectors, not captured once at load: switching to another installed
+  // separator must clear the gap instead of leaving a stale banner.
+  const missing = useMemo(() => {
+    const present = new Set(have);
+    const gaps: string[] = [];
+    // Separation is mandatory (ADR-037): the Python runtime and the chosen weights
+    // are hard prerequisites, not conveniences.
+    if (!present.has("separator-python")) gaps.push("separator-python");
+    if (separator !== "" && !present.has(separator)) gaps.push(separator);
+    if (model !== "" && !present.has(model)) gaps.push(model);
+    return gaps;
+  }, [have, separator, model]);
+
+  const selectedSep = useMemo(
+    () => sepModels.find((m) => m.id === separator),
+    [sepModels, separator],
+  );
+  // The stems this model declares. The list is the model's property (ADR-019), so
+  // the checkboxes cannot offer a track the engine would never write. Stable in a
+  // memo so the run callback does not see a new array on every render.
+  const stemChoices = useMemo(() => selectedSep?.stems ?? [], [selectedSep]);
 
   useEffect(() => {
     if (!active) {
@@ -264,6 +304,10 @@ export function NewTask() {
       const res = await enqueue(inputs, {
         outputDir,
         model,
+        separator,
+        // An empty list means "keep everything"; that is the backend's documented
+        // default and avoids sending a stale set when the model is unknown here.
+        stems: stemChoices.length > 0 ? stems : [],
         params: { ...readParams(), input_language: language },
       });
       if (res.error) {
@@ -289,7 +333,7 @@ export function NewTask() {
     } finally {
       setBusy(false);
     }
-  }, [busy, manual, staged, outputDir, model, language, refresh, t]);
+  }, [busy, manual, staged, outputDir, model, separator, stems, stemChoices, language, refresh, t]);
 
   const stop = useCallback(
     async (id: string) => {
@@ -312,13 +356,35 @@ export function NewTask() {
   }, []);
 
   const persist = useCallback(async () => {
-    const res = await saveSettings({ output_dir: outputDir, model });
+    // Saving here also makes the stage-1 choice the default for future runs; the
+    // Models page shows the same value, so the two cannot disagree.
+    const res = await saveSettings({ output_dir: outputDir, model, separator });
     if (res.error) setError(res.error);
     else setNotice(t("task.saved"));
-  }, [outputDir, model, t]);
+  }, [outputDir, model, separator, t]);
 
   const totalStaged = staged.length + manual.split("\n").filter((s) => s.trim() !== "").length;
   const ready = totalStaged > 0 && missing.length === 0 && !busy;
+
+  const changeSeparator = useCallback(
+    (id: string) => {
+      setSeparator(id);
+      // Switching models resets retention to "everything this model produces";
+      // keeping a previous selection could silently drop the new model's tracks.
+      const chosen = sepModels.find((m) => m.id === id);
+      setStems(chosen?.stems ?? []);
+    },
+    [sepModels],
+  );
+
+  const toggleStem = useCallback((stem: string) => {
+    // vocals is what the transcript is made from; refusing the uncheck is kinder
+    // than letting the run fail after separation.
+    if (stem === "vocals") return;
+    setStems((prev) =>
+      prev.includes(stem) ? prev.filter((s) => s !== stem) : [...prev, stem],
+    );
+  }, []);
 
   const stateLabel = (item: QueueItemView): string => {
     switch (item.state) {
@@ -466,6 +532,84 @@ export function NewTask() {
             {t("task.saveSettings")}
           </button>
         </div>
+
+        <div
+          className="row"
+          style={{ gap: "var(--sp-6)", flexWrap: "wrap", alignItems: "center" }}
+        >
+          <label className="row" style={{ gap: "var(--sp-2)" }}>
+            <span className="mono muted" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {t("task.separator")}
+            </span>
+            <select
+              className="input"
+              value={separator}
+              onChange={(e) => changeSeparator(e.target.value)}
+              aria-label={t("task.separator")}
+            >
+              <option value="">—</option>
+              {sepModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {[
+                    m.name || m.id,
+                    m.architecture,
+                    m.stems && m.stems.length > 0
+                      ? t("models.stems").replace("{n}", String(m.stems.length))
+                      : "",
+                    m.non_commercial ? t("models.nonCommercial") : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </option>
+              ))}
+              {separator !== "" && !sepModels.some((m) => m.id === separator) ? (
+                <option value={separator}>{`${separator} · ${t("task.modelMissing")}`}</option>
+              ) : null}
+            </select>
+          </label>
+
+          {stemChoices.length > 0 ? (
+            <div className="row" style={{ gap: "var(--sp-3)", flexWrap: "wrap" }}>
+              <span className="mono muted" style={{ whiteSpace: "nowrap" }}>
+                {t("task.stems")}
+              </span>
+              {stemChoices.map((stem) => {
+                const locked = stem === "vocals";
+                return (
+                  <label
+                    key={stem}
+                    className="row"
+                    style={{ gap: "var(--sp-1)", cursor: locked ? "default" : "pointer" }}
+                    title={locked ? t("task.stem.locked") : undefined}
+                  >
+                    {locked ? (
+                      // A disabled native checkbox is drawn grey, which reads as
+                      // "not kept" in the dark theme — the opposite of what
+                      // locking vocals means. A filled marker states the truth
+                      // in both themes and cannot be clicked.
+                      <span
+                        className="stem-lock"
+                        role="img"
+                        aria-label={t("task.stem.locked")}
+                      />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={stems.includes(stem)}
+                        onChange={() => toggleStem(stem)}
+                      />
+                    )}
+                    <span className="mono">{STEM_KEYS[stem] ? t(STEM_KEYS[stem]) : stem}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        <p className="mono muted" style={{ margin: 0 }}>
+          {t("task.stemsHint")}
+        </p>
 
         <p className="mono muted" style={{ margin: 0 }}>
           {t("task.outputDirHint")}

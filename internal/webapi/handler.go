@@ -222,9 +222,13 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 			writeJSON(w, http.StatusOK, q.Snapshot())
 		case http.MethodPost:
 			var req struct {
-				Inputs    []string          `json:"inputs"`
-				OutputDir string            `json:"output_dir"`
-				Model     string            `json:"model"`
+				Inputs    []string `json:"inputs"`
+				OutputDir string   `json:"output_dir"`
+				Model     string   `json:"model"`
+				// Separator overrides the configured separation model for these
+				// items, chosen on the New task page (stage 1).
+				Separator string            `json:"separator"`
+				Stems     []string          `json:"stems"`
 				Params    map[string]string `json:"params"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -241,11 +245,13 @@ func New(svc *runctl.Service, fallback http.Handler, workdir string) http.Handle
 				return
 			}
 			added, rejected := q.Enqueue(req.Inputs, runctl.Options{
-				ModelID:    req.Model,
-				Params:     params,
-				OutputDir:  req.OutputDir,
-				Engine:     "auto",
-				DurationMS: 30000,
+				ModelID:     req.Model,
+				SeparatorID: req.Separator,
+				ExportStems: req.Stems,
+				Params:      params,
+				OutputDir:   req.OutputDir,
+				Engine:      "auto",
+				DurationMS:  30000,
 			})
 			writeJSON(w, http.StatusAccepted, map[string]any{"added": len(added), "total": q.Snapshot().Total, "rejected": rejected})
 		default:

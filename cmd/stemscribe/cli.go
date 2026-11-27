@@ -37,6 +37,9 @@ func cmdRun(args []string) int {
 	shifts := fs.Int("shifts", 0, "Demucs random shifts (0 = default)")
 	batch := fs.Int("batch", 0, "separation batch size (MDX/VR/MDXC; 0 = default)")
 	fp16 := fs.Bool("fp16", false, "ask the torch stack for fp16 autocast (CUDA only, opt-in)")
+	// Stems to keep, comma-separated (e.g. "vocals" or "vocals,instrumental").
+	// Empty keeps everything the model produces. vocals is always required.
+	keepStems := fs.String("stems", "", "stems to keep after separation, comma-separated (default: all; vocals always required)")
 
 	// The knobs that matter on the first real use, reachable without the UI (F-10).
 	lang := fs.String("language", "", "spoken language, e.g. zh or auto (default: engine default en)")
@@ -117,6 +120,10 @@ func cmdRun(args []string) int {
 			}
 		case "stage.warn":
 			fmt.Printf("! %s (%s) %s\n", ev.Stage, ev.Code, ev.Note)
+		case "stems":
+			// Which tracks survived the retention choice. Printed because the files
+			// are deleted, so the log is the only place the decision is visible.
+			fmt.Printf("· %s %s\n", ev.Stage, ev.Note)
 		case "stage.skip":
 			fmt.Printf("· %s skipped (%s)\n", ev.Stage, ev.Note)
 		}
@@ -138,11 +145,12 @@ func cmdRun(args []string) int {
 			Segment: *segSize, Overlap: *overlap, Shifts: *shifts,
 			BatchSize: *batch, FP16: *fp16,
 		},
-		Engine:     *engineName,
-		DurationMS: *durationMS,
-		Params:     params,
-		Separate:   !*noSeparate,
-		Emit:       emit,
+		ExportStems: splitCSV(*keepStems),
+		Engine:      *engineName,
+		DurationMS:  *durationMS,
+		Params:      params,
+		Separate:    !*noSeparate,
+		Emit:        emit,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "run: %v\n", err)
@@ -225,5 +233,18 @@ func syntheticVideoID(inputPath string) (string, error) {
 }
 
 var errNotImplemented = errors.New("not implemented")
+
+// splitCSV turns a comma-separated flag value into trimmed, non-empty entries.
+// Validation (vocals required, names must belong to the model) happens in runctl,
+// so the CLI does not duplicate the rule.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 var _ = store.HashParams
